@@ -1,0 +1,43 @@
+{
+  "name": "jpopdb",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "dev:api": "npm run dev --workspace @jpopdb/api",
+    "dev:worker": "npm run dev --workspace @jpopdb/worker",
+    "dev:web": "npm run dev --workspace @jpopdb/web",
+    "lint": "npm run lint --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "verify": "npm run lint && npm run typecheck && npm run test && npm run build && npm run compose:check",
+    "compose:check": "node scripts/check-compose.mjs",
+    "local:infra:install": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows/install-local-infra.ps1",
+    "local:infra:start": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows/start-local-infra.ps1",
+    "local:infra:stop": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows/stop-local-infra.ps1",
+    "local:infra:status": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows/status-local-infra.ps1",
+    "local:infra:verify": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows/verify-local-infra.ps1",
+    "smoke:phase1": "node scripts/smoke-phase1.mjs",
+    "smoke:phase2": "node scripts/smoke-phase2.mjs",
+    "smoke:catalog": "node scripts/smoke-catalog.mjs",
+    "db:migrate": "npm run db:migrate --workspace @jpopdb/api",
+    "db:migration:check": "npm run db:migration:check --workspace @jpopdb/api",
+    "db:catalog-backfill": "npm run db:catalog-backfill --workspace @jpopdb/api"
+  },
+  "engines": {
+    "node": ">=22.12.0",
+    "npm": ">=10.0.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.0",
+    "eslint": "^10.5.0",
+    "globals": "^17.4.0",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.61.0",
+    "yaml": "^2.8.2"
+  }
+}

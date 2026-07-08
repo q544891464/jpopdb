@@ -1,0 +1,34 @@
+{
+  "name": "@jpopdb/api",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsx watch src/main.ts",
+    "start": "node dist/src/main.js",
+    "lint": "eslint src test scripts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "db:migrate": "tsx scripts/migrate.ts",
+    "db:migration:check": "tsx scripts/check-migrations.ts",
+    "db:catalog-backfill": "tsx scripts/backfill-catalog-metadata.ts"
+  },
+  "dependencies": {
+    "@nestjs/common": "^11.1.26",
+    "@nestjs/config": "^4.0.4",
+    "@nestjs/core": "^11.1.26",
+    "@nestjs/platform-express": "^11.1.26",
+    "bullmq": "^5.78.1",
+    "ioredis": "^5.11.1",
+    "pg": "^8.21.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2"
+  },
+  "devDependencies": {
+    "@nestjs/testing": "^11.1.26",
+    "@types/node": "^24.10.13",
+    "@types/pg": "^8.16.0",
+    "tsx": "^4.22.4",
+    "vitest": "^4.1.8"
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "name": "@jpopdb/worker",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsx watch src/main.ts",
+    "start": "node dist/src/main.js",
+    "lint": "eslint src test",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "bullmq": "^5.78.1",
+    "dotenv": "^17.4.1",
+    "ioredis": "^5.11.1",
+    "pg": "^8.21.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.13",
+    "@types/pg": "^8.16.0",
+    "tsx": "^4.22.4",
+    "vitest": "^4.1.8"
+  }
+}

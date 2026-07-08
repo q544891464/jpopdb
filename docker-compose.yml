@@ -1,0 +1,98 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    command:
+      - postgres
+      - -c
+      - log_min_duration_statement=500
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-jmusic}
+      POSTGRES_USER: ${POSTGRES_USER:-jmusic}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-jmusic} -d ${POSTGRES_DB:-jmusic}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:8-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      NODE_ENV: production
+      API_PORT: 3001
+      WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:8080}
+      DATABASE_URL: postgres://${POSTGRES_USER:-jmusic}:${POSTGRES_PASSWORD:-change-me}@postgres:5432/${POSTGRES_DB:-jmusic}
+      REDIS_URL: redis://redis:6379
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-}
+      DB_POOL_MAX: ${DB_POOL_MAX:-10}
+      DB_STATEMENT_TIMEOUT_MS: ${DB_STATEMENT_TIMEOUT_MS:-15000}
+      NETEASE_API_BASE_URL: ${NETEASE_API_BASE_URL:-http://182.92.153.82:3000}
+      LASTFM_API_KEY: ${LASTFM_API_KEY:-}
+      LASTFM_SHARED_SECRET: ${LASTFM_SHARED_SECRET:-}
+      MUSICBRAINZ_APP_NAME: ${MUSICBRAINZ_APP_NAME:-jpopdb}
+      MUSICBRAINZ_CONTACT_EMAIL: ${MUSICBRAINZ_CONTACT_EMAIL:-}
+    ports:
+      - "${API_HOST_PORT:-3001}:3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://${POSTGRES_USER:-jmusic}:${POSTGRES_PASSWORD:-change-me}@postgres:5432/${POSTGRES_DB:-jmusic}
+      REDIS_URL: redis://redis:6379
+      WORKER_DB_POOL_MAX: ${WORKER_DB_POOL_MAX:-5}
+      WORKER_DB_STATEMENT_TIMEOUT_MS: ${WORKER_DB_STATEMENT_TIMEOUT_MS:-60000}
+      NETEASE_API_BASE_URL: ${NETEASE_API_BASE_URL:-http://182.92.153.82:3000}
+      LASTFM_API_KEY: ${LASTFM_API_KEY:-}
+      LASTFM_SHARED_SECRET: ${LASTFM_SHARED_SECRET:-}
+      MUSICBRAINZ_APP_NAME: ${MUSICBRAINZ_APP_NAME:-jpopdb}
+      MUSICBRAINZ_CONTACT_EMAIL: ${MUSICBRAINZ_CONTACT_EMAIL:-}
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  redis-data:
