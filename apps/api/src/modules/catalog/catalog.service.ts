@@ -161,9 +161,7 @@ export class CatalogService {
     const whereSql = `WHERE ${conditions.join('\nAND ')}`
     const countResult = this.shouldUseScreeningOnlyCount(request)
       ? await this.database.query<CountRow>(
-        `SELECT count(*)::int AS total
-         FROM song_screening screening
-         WHERE ${this.publicScopeSql()}`,
+        this.catalogPublicEstimateCountSql(),
       )
       : await this.database.query<CountRow>(
         `SELECT count(*)::int AS total
@@ -474,6 +472,17 @@ export class CatalogService {
     return `FROM song_screening screening
        JOIN songs song ON song.id = screening.song_id
        LEFT JOIN albums album ON album.id = song.album_id`
+  }
+
+  private catalogPublicEstimateCountSql(): string {
+    return `SELECT GREATEST(
+         0,
+         COALESCE((
+           SELECT reltuples::int
+           FROM pg_class
+           WHERE oid = to_regclass('idx_song_screening_public_song_id')
+         ), 0)
+       ) AS total`
   }
 
   private catalogArtistSelectSql(): string {

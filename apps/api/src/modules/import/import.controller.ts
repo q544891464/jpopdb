@@ -23,6 +23,11 @@ export class ImportController {
     return this.playlistImports.create(body)
   }
 
+  @Post('import/artist/manual')
+  async importManualArtist(@Body() body: unknown): Promise<SyncJobResponse> {
+    return this.artistSongImports.createManualArtistImport(body)
+  }
+
   @Post('import/artist/:artistId')
   async importArtistSongs(
     @Param('artistId') artistId: string,
@@ -37,6 +42,13 @@ export class ImportController {
     @Body() body: unknown,
   ): Promise<SyncJobResponse> {
     return this.artistSongImports.continueForArtist(artistId, body)
+  }
+
+  @Post('import/artists/truncated/continue')
+  async continueTruncatedArtistSongs(
+    @Body() body: unknown,
+  ): Promise<ConfirmedArtistImportResponse> {
+    return this.artistSongImports.continueTruncatedImports(body)
   }
 
   @Post('import/artists/confirmed')

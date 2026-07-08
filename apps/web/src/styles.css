@@ -1092,6 +1092,33 @@ h3 {
   grid-template-columns: minmax(0, 1fr) 260px;
 }
 
+.manual-artist-form {
+  align-items: end;
+  background: #fff7fb;
+  border: 1px solid #f0d7e2;
+  border-radius: 20px;
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(220px, 1.3fr) minmax(160px, 0.7fr) minmax(180px, 0.8fr) auto;
+  margin: 16px 0 18px;
+  padding: 16px;
+}
+
+.manual-artist-form label {
+  display: grid;
+  gap: 6px;
+}
+
+.manual-artist-form label span {
+  color: #746c78;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.manual-artist-form p {
+  margin: 6px 0 0;
+}
+
 .candidate-main {
   min-width: 0;
 }
@@ -1517,6 +1544,10 @@ h3 {
   .catalog-control-bar,
   .catalog-grid,
   .catalog-card--list {
+    grid-template-columns: 1fr;
+  }
+
+  .manual-artist-form {
     grid-template-columns: 1fr;
   }
 

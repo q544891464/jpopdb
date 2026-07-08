@@ -295,6 +295,9 @@ const screeningLoading = ref(false)
 const screeningMessage = ref('')
 const screeningError = ref('')
 const screeningLimit = ref(50)
+const manualArtistNeteaseId = ref('')
+const manualArtistName = ref('')
+const manualArtistImportLoading = ref(false)
 const jobs = ref<SyncJob[]>([])
 const jobsLoading = ref(true)
 const stats = ref<ScreeningStats | null>(null)
@@ -313,6 +316,7 @@ const reviewingArtistId = ref<string | null>(null)
 const importingArtistId = ref<string | null>(null)
 const continuingImportJobId = ref<string | null>(null)
 const bulkArtistImportLoading = ref(false)
+const bulkTruncatedImportLoading = ref(false)
 const rescreeningSongId = ref<string | null>(null)
 const selectedCandidate = ref<CandidateSong | null>(null)
 const catalogQuery = ref('')
@@ -341,6 +345,7 @@ const currentPage = ref<'catalog' | 'admin'>(
   window.location.pathname.startsWith('/admin') ? 'admin' : 'catalog',
 )
 let pollingTimer: ReturnType<typeof setInterval> | undefined
+let pollingTick = 0
 
 const hasActiveJobs = computed(() =>
   jobs.value.some((job) => job.status === 'pending' || job.status === 'running'),
@@ -363,6 +368,9 @@ const selectedIsUnscreened = computed(() =>
 )
 
 async function readError(response: Response): Promise<string> {
+  if (response.status === 429) {
+    return '请求过于频繁，请稍等几秒后重试。'
+  }
   try {
     const payload = (await response.json()) as { message?: unknown }
     if (typeof payload.message === 'string') return payload.message
@@ -898,6 +906,64 @@ async function importConfirmedArtists(): Promise<void> {
   }
 }
 
+async function importManualArtistSongs(): Promise<void> {
+  const neteaseArtistId = manualArtistNeteaseId.value.trim()
+  const artistName = manualArtistName.value.trim()
+  screeningMessage.value = ''
+  screeningError.value = ''
+  if (!/^\d{1,20}$/u.test(neteaseArtistId)) {
+    screeningError.value = '请输入有效的网易云艺人数字 ID。'
+    return
+  }
+  manualArtistImportLoading.value = true
+  try {
+    const response = await adminFetch('/api/admin/import/artist/manual', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        neteaseArtistId,
+        artistName: artistName || undefined,
+        maxSongs: 500,
+      }),
+    })
+    if (!response.ok) throw new Error(await readError(response))
+    const job = (await response.json()) as SyncJob
+    screeningMessage.value = `已手动添加网易云艺人 ${artistName || neteaseArtistId}，并创建歌曲导入任务 #${job.id}。`
+    manualArtistNeteaseId.value = ''
+    manualArtistName.value = ''
+    await Promise.all([loadJobs({ silent: true }), loadArtistIdentities({ silent: true })])
+  } catch (error) {
+    screeningError.value = error instanceof Error ? error.message : '手动添加艺人失败'
+  } finally {
+    manualArtistImportLoading.value = false
+  }
+}
+
+async function continueTruncatedArtistImports(): Promise<void> {
+  const restoreScroll = createScrollRestorer()
+  bulkTruncatedImportLoading.value = true
+  screeningMessage.value = ''
+  screeningError.value = ''
+  try {
+    const response = await adminFetch('/api/admin/import/artists/truncated/continue', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ maxArtists: 10, maxSongsPerArtist: 500 }),
+    })
+    if (!response.ok) throw new Error(await readError(response))
+    const result = (await response.json()) as ConfirmedArtistImportResult
+    screeningMessage.value = result.queuedCount > 0
+      ? `已为 ${result.queuedCount} 个已截断艺人创建后续导入任务，每个任务继续导入后续 ${result.maxSongsPerArtist} 首。`
+      : '没有找到可继续导入的截断艺人任务。'
+    await loadJobs({ silent: true })
+  } catch (error) {
+    screeningError.value = error instanceof Error ? error.message : '批量继续截断导入失败'
+  } finally {
+    bulkTruncatedImportLoading.value = false
+    restoreScroll()
+  }
+}
+
 async function continueArtistImport(job: SyncJob): Promise<void> {
   const artistId = artistIdFromJob(job)
   if (!artistId) {
@@ -1219,6 +1285,7 @@ function stopAdminPolling(): void {
   if (!pollingTimer) return
   clearInterval(pollingTimer)
   pollingTimer = undefined
+  pollingTick = 0
 }
 
 function startAdminPolling(): void {
@@ -1230,11 +1297,19 @@ function startAdminPolling(): void {
       return
     }
     if (hasActiveJobs.value) {
-      void loadJobs({ silent: true })
-      void loadStats({ silent: true })
-      void loadCandidates({ silent: true })
+      pollingTick += 1
+      void loadJobs({ silent: true }).catch(ignoreAdminPollingError)
+      void loadStats({ silent: true }).catch(ignoreAdminPollingError)
+      if (pollingTick % 3 === 0) {
+        void loadCandidates({ silent: true }).catch(ignoreAdminPollingError)
+      }
     }
-  }, 2_000)
+  }, 8_000)
+}
+
+function ignoreAdminPollingError(error: unknown): void {
+  if (isAdminAuthError(error)) return
+  if (error instanceof Error && (error.message.includes('429') || error.message.includes('请求过于频繁'))) return
 }
 
 async function loadAdminData(): Promise<void> {
@@ -1969,12 +2044,35 @@ onUnmounted(() => {
           >
             导入下一批 10 位确认艺人
           </el-button>
+          <el-button
+            :loading="bulkTruncatedImportLoading"
+            @click="continueTruncatedArtistImports"
+          >
+            继续所有截断导入
+          </el-button>
           <el-button :loading="artistIdentitiesLoading" text @click="loadArtistIdentities()">刷新艺人</el-button>
         </div>
       </div>
       <p class="section-note">
         新确认的日本艺人会自动创建歌曲导入任务；批量操作优先处理从未导入的艺人，每位最多 500 首，重复执行会按网易云歌曲 ID 去重。
       </p>
+      <form class="manual-artist-form" @submit.prevent="importManualArtistSongs">
+        <div>
+          <strong>手动添加网易云艺人</strong>
+          <p class="muted">输入网易云艺人 ID 后会标记为人工确认日本艺人，并立即导入该艺人的关联歌曲。</p>
+        </div>
+        <label>
+          <span>网易云艺人 ID</span>
+          <el-input v-model="manualArtistNeteaseId" clearable placeholder="例如 33927412" />
+        </label>
+        <label>
+          <span>艺人名称（可选）</span>
+          <el-input v-model="manualArtistName" clearable placeholder="例如 YOASOBI" />
+        </label>
+        <el-button native-type="submit" type="primary" :loading="manualArtistImportLoading">
+          添加并导入歌曲
+        </el-button>
+      </form>
 
       <el-skeleton v-if="artistIdentitiesLoading" :rows="4" animated />
       <div v-else-if="artistIdentitiesError" class="empty-state error-state">

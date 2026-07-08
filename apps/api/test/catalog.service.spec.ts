@@ -194,7 +194,8 @@ describe('CatalogService', () => {
 
     await service.findSongs({})
 
-    expect(String(database.query.mock.calls[0]?.[0])).toContain('FROM song_screening screening')
+    expect(String(database.query.mock.calls[0]?.[0])).toContain('to_regclass')
+    expect(String(database.query.mock.calls[0]?.[0])).toContain('idx_song_screening_public_song_id')
     expect(database.query.mock.calls[0]?.[1]).toBeUndefined()
     expect(String(database.query.mock.calls[1]?.[0])).toContain('FROM albums album')
     expect(String(database.query.mock.calls[1]?.[0])).toContain('JOIN songs song ON song.album_id = album.id')
