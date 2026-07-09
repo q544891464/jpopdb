@@ -154,6 +154,59 @@ describe('ScreeningService', () => {
       manualConfirmedArtists: 6,
       lastfmConfigured: Boolean(process.env.LASTFM_API_KEY),
     })
+    expect(String(database.query.mock.calls[0]?.[0])).toContain('WITH estimates AS')
+    expect(String(database.query.mock.calls[0]?.[0])).toContain('reltuples::int')
+    expect(String(database.query.mock.calls[0]?.[0])).toContain('song_artist_review_flags')
+  })
+
+  it('records the previous status when manually reviewing a song', async () => {
+    const updatedAt = new Date('2026-06-16T00:00:00Z')
+    const database = {
+      query: vi.fn()
+        .mockResolvedValueOnce({ rows: [{ status: 'pending' }] })
+        .mockResolvedValueOnce({ rows: [{ id: '1', status: 'accepted' }] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({
+          rows: [
+            {
+              song_id: '20',
+              netease_song_id: '12345',
+              song_name: 'Reviewed Song',
+              artist_names: ['Aimer'],
+              artist_identities: [],
+              album_name: 'Album',
+              playlist_names: [],
+              score: '80.00',
+              status: 'accepted',
+              is_japanese_candidate: true,
+              reason: { manual_review: { status: 'accepted' } },
+              reviewed_by: 'admin',
+              reviewed_at: updatedAt,
+              updated_at: updatedAt,
+            },
+          ],
+        }),
+    }
+    const service = new ScreeningService(
+      database as unknown as DatabaseService,
+      {} as QueueService,
+      {} as SyncJobService,
+    )
+
+    const result = await service.reviewSong('20', {
+      status: 'accepted',
+      reviewer: 'admin',
+      reason: 'confirmed manually',
+    })
+
+    expect(result.status).toBe('accepted')
+    expect(database.query.mock.calls[2]?.[1]).toEqual([
+      '20',
+      'pending',
+      'accepted',
+      'confirmed manually',
+      'admin',
+    ])
   })
 
   it('filters candidates by lyric fallback evidence', async () => {

@@ -37,6 +37,10 @@ type ReviewRow = {
   status: ScreeningStatus
 }
 
+type ExistingScreeningRow = {
+  status: ScreeningStatus
+}
+
 type ActiveJobRow = {
   id: string
 }
@@ -150,59 +154,76 @@ export class ScreeningService {
 
   async getStats(): Promise<ScreeningStatsResponse> {
     const result = await this.database.query<StatsRow>(
-      `SELECT
-         count(*)::int AS total_songs,
-         count(*) FILTER (WHERE screening.status = 'accepted')::int AS accepted_songs,
-         count(*) FILTER (WHERE screening.status = 'pending')::int AS pending_songs,
-         count(*) FILTER (WHERE screening.status = 'rejected')::int AS rejected_songs,
-         count(*) FILTER (
-           WHERE screening.status = 'pending'
-             AND screening.score = 0
-             AND screening.reviewed_at IS NULL
-             AND screening.reason->>'summary' = '已从网易云歌单导入，等待外部 API 初筛。'
-         )::int AS unscreened_songs,
-         count(*) FILTER (WHERE screening.reviewed_at IS NOT NULL)::int AS manually_reviewed_songs,
-         count(*) FILTER (
-           WHERE EXISTS (
-             SELECT 1
-             FROM song_artists stat_song_artist
-             JOIN artist_identity stat_identity ON stat_identity.artist_id = stat_song_artist.artist_id
-             WHERE stat_song_artist.song_id = screening.song_id
-               AND stat_identity.reviewed_at IS NOT NULL
-           )
-         )::int AS manual_artist_songs,
-         count(*) FILTER (
-           WHERE EXISTS (
-             SELECT 1
-             FROM song_artists stat_song_artist
-             LEFT JOIN artist_identity stat_identity ON stat_identity.artist_id = stat_song_artist.artist_id
-             WHERE stat_song_artist.song_id = screening.song_id
-               AND (
-                 stat_identity.artist_id IS NULL
-                 OR stat_identity.status IN ('unknown', 'pending')
-               )
-           )
-         )::int AS needs_artist_review_songs,
-         count(*) FILTER (
-           WHERE screening.status = 'pending'
-             AND EXISTS (
-               SELECT 1
-               FROM song_artists stat_song_artist
-               JOIN artist_identity stat_identity ON stat_identity.artist_id = stat_song_artist.artist_id
-               WHERE stat_song_artist.song_id = screening.song_id
-                 AND stat_identity.reviewed_at IS NOT NULL
-             )
-         )::int AS manual_artist_pending_songs,
-         count(*) FILTER (
-           WHERE screening.status = 'pending'
-             AND screening.score >= 50
-         )::int AS high_score_pending_songs,
-         count(*) FILTER (
-           WHERE screening.reason->'fallback'->>'passed' = 'true'
-         )::int AS lyric_fallback_songs,
-         (SELECT count(*)::int FROM artist_identity WHERE status IN ('confirmed_by_api', 'confirmed_by_manual')) AS confirmed_artists,
-         (SELECT count(*)::int FROM artist_identity WHERE status = 'confirmed_by_manual') AS manual_confirmed_artists
-       FROM song_screening screening`,
+      `WITH estimates AS (
+         SELECT
+           GREATEST(0, COALESCE((
+             SELECT reltuples::int
+             FROM pg_class
+             WHERE oid = 'song_screening'::regclass
+           ), 0)) AS total_songs,
+           GREATEST(0, COALESCE((
+             SELECT reltuples::int
+             FROM pg_class
+             WHERE oid = to_regclass('idx_song_artist_review_flags_manual')
+           ), 0)) AS manual_artist_songs,
+           GREATEST(0, COALESCE((
+             SELECT reltuples::int
+             FROM pg_class
+             WHERE oid = to_regclass('idx_song_artist_review_flags_needs_review')
+           ), 0)) AS needs_artist_review_songs
+       ),
+       exact_counts AS (
+         SELECT
+           (SELECT count(*)::int FROM song_screening WHERE status = 'pending') AS pending_songs,
+           (SELECT count(*)::int FROM song_screening WHERE status = 'rejected') AS rejected_songs,
+           (SELECT count(*)::int FROM song_screening WHERE reviewed_at IS NOT NULL) AS manually_reviewed_songs,
+           (SELECT count(*)::int FROM song_screening WHERE status = 'pending' AND score >= 50) AS high_score_pending_songs,
+           (
+             SELECT count(*)::int
+             FROM song_screening
+             WHERE status = 'pending'
+               AND score = 0
+               AND reviewed_at IS NULL
+               AND reason->>'summary' = '已从网易云歌单导入，等待外部 API 初筛。'
+           ) AS unscreened_songs,
+           (
+             SELECT count(*)::int
+             FROM song_screening
+             WHERE reason->'fallback'->>'passed' = 'true'
+           ) AS lyric_fallback_songs,
+           (
+             SELECT count(*)::int
+             FROM song_screening screening
+             JOIN song_artist_review_flags flags ON flags.song_id = screening.song_id
+             WHERE screening.status = 'pending'
+               AND flags.has_manual_artist
+           ) AS manual_artist_pending_songs,
+           (
+             SELECT count(*)::int
+             FROM artist_identity
+             WHERE status IN ('confirmed_by_api', 'confirmed_by_manual')
+           ) AS confirmed_artists,
+           (
+             SELECT count(*)::int
+             FROM artist_identity
+             WHERE status = 'confirmed_by_manual'
+           ) AS manual_confirmed_artists
+       )
+       SELECT
+         GREATEST(estimates.total_songs, exact_counts.pending_songs + exact_counts.rejected_songs) AS total_songs,
+         GREATEST(estimates.total_songs - exact_counts.pending_songs - exact_counts.rejected_songs, 0) AS accepted_songs,
+         exact_counts.pending_songs,
+         exact_counts.rejected_songs,
+         exact_counts.unscreened_songs,
+         exact_counts.manually_reviewed_songs,
+         estimates.manual_artist_songs,
+         estimates.needs_artist_review_songs,
+         exact_counts.manual_artist_pending_songs,
+         exact_counts.high_score_pending_songs,
+         exact_counts.lyric_fallback_songs,
+         exact_counts.confirmed_artists,
+         exact_counts.manual_confirmed_artists
+       FROM estimates, exact_counts`,
     )
     const row = result.rows[0]
     return {
@@ -228,6 +249,16 @@ export class ScreeningService {
       throw new BadRequestException('Invalid song ID')
     }
     const request = this.parseReviewRequest(body)
+    const previousResult = await this.database.query<ExistingScreeningRow>(
+      `SELECT status
+       FROM song_screening
+       WHERE song_id = $1`,
+      [songId],
+    )
+    const oldStatus = previousResult.rows[0]?.status
+    if (!oldStatus) {
+      throw new NotFoundException('Song screening record not found')
+    }
     const result = await this.database.query<ReviewRow>(
       `UPDATE song_screening
        SET status = $2,
@@ -261,8 +292,8 @@ export class ScreeningService {
     }
     await this.database.query(
       `INSERT INTO review_records (target_type, target_id, old_status, new_status, reason, reviewer)
-       VALUES ('song', $1, NULL, $2, $3, $4)`,
-      [songId, request.status, request.reason ?? null, request.reviewer ?? 'admin'],
+       VALUES ('song', $1, $2, $3, $4, $5)`,
+      [songId, oldStatus, request.status, request.reason ?? null, request.reviewer ?? 'admin'],
     )
     const refreshed = await this.findCandidateBySongId(songId)
     if (!refreshed) {

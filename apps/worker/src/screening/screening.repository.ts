@@ -406,7 +406,13 @@ export class ScreeningRepository {
     await this.pool.query(
       `INSERT INTO external_matches (
          target_type, target_id, source, external_id, matched_name, confidence, raw_json
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
+       ON CONFLICT (target_type, target_id, source) DO UPDATE SET
+         external_id = EXCLUDED.external_id,
+         matched_name = EXCLUDED.matched_name,
+         confidence = EXCLUDED.confidence,
+         raw_json = EXCLUDED.raw_json,
+         created_at = NOW()`,
       [
         targetType,
         targetId,

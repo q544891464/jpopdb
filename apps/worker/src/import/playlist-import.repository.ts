@@ -172,14 +172,15 @@ export class PlaylistImportRepository {
         ],
       )
       await client.query(
-        `DELETE FROM external_matches
-         WHERE target_type = 'song' AND target_id = $1 AND source = 'netease'`,
-        [songId],
-      )
-      await client.query(
         `INSERT INTO external_matches (
            target_type, target_id, source, external_id, matched_name, confidence, raw_json
-         ) VALUES ('song', $1, 'netease', $2, $3, 100, $4::jsonb)`,
+         ) VALUES ('song', $1, 'netease', $2, $3, 100, $4::jsonb)
+         ON CONFLICT (target_type, target_id, source) DO UPDATE SET
+           external_id = EXCLUDED.external_id,
+           matched_name = EXCLUDED.matched_name,
+           confidence = EXCLUDED.confidence,
+           raw_json = EXCLUDED.raw_json,
+           created_at = NOW()`,
         [songId, String(song.id), song.name, JSON.stringify(song)],
       )
       await client.query('COMMIT')
