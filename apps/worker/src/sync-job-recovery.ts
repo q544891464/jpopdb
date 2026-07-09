@@ -98,8 +98,9 @@ async function toQueueJob(
       name: CATALOG_STATS_SYNC_JOB,
       data: {
         syncJobId: row.id,
-        limit: readMetadataInteger(row.metadata, 'limit', 100),
+        limit: readNullableMetadataInteger(row.metadata, 'limit', 1_000),
         missingOnly: readMetadataBoolean(row.metadata, 'missingOnly', true),
+        all: readMetadataBoolean(row.metadata, 'all', false),
       },
     }
   }
@@ -117,6 +118,17 @@ function readMetadataBoolean(metadata: unknown, field: string, fallback: boolean
   if (typeof metadata !== 'object' || metadata === null || !(field in metadata)) return fallback
   const value = (metadata as Record<string, unknown>)[field]
   return typeof value === 'boolean' ? value : fallback
+}
+
+function readNullableMetadataInteger(
+  metadata: unknown,
+  field: string,
+  fallback: number,
+): number | null {
+  if (typeof metadata !== 'object' || metadata === null || !(field in metadata)) return fallback
+  const value = (metadata as Record<string, unknown>)[field]
+  if (value === null) return null
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : fallback
 }
 
 async function findArtistForImport(database: Pool, sourceId: string | null): Promise<ArtistRow | null> {

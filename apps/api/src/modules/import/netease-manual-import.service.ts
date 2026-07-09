@@ -43,6 +43,13 @@ type NeteaseWikiTag = {
   raw: unknown
 }
 
+type NeteaseCatalogStats = {
+  publishTime: Date | null
+  popularity: number | null
+  redCount: number | null
+  commentCount: number | null
+}
+
 export type NeteaseSongSearchItem = {
   neteaseSongId: string
   songName: string
@@ -71,6 +78,8 @@ export type ManualSongImportResponse = {
   songName: string
   artistNames: string[]
   albumName: string | null
+  redCount: number | null
+  commentCount: number | null
   tags: Array<{ group: string; value: string }>
 }
 
@@ -111,13 +120,16 @@ export class NeteaseManualImportService {
     const detail = await this.request('/song/detail', { ids: neteaseSongId })
     const song = this.readSongDetail(detail)
     const wikiTags = await this.fetchWikiTags(neteaseSongId)
-    const songId = await this.persistManualSong(song, wikiTags?.tags)
+    const stats = await this.fetchCatalogStats(neteaseSongId, this.readAlbumId(song))
+    const songId = await this.persistManualSong(song, wikiTags?.tags, stats)
     return {
       songId,
       neteaseSongId: String(song.id),
       songName: song.name,
       artistNames: song.ar.map((artist) => artist.name),
       albumName: song.al.name ?? null,
+      redCount: stats?.redCount ?? null,
+      commentCount: stats?.commentCount ?? null,
       tags: (wikiTags?.tags ?? []).map((tag) => ({ group: tag.group, value: tag.value })),
     }
   }
@@ -167,13 +179,40 @@ export class NeteaseManualImportService {
     }
   }
 
+  private async fetchCatalogStats(
+    neteaseSongId: string,
+    neteaseAlbumId: string | null,
+  ): Promise<NeteaseCatalogStats | undefined> {
+    try {
+      const [detail, red, comments] = await Promise.all([
+        this.request('/song/detail', { ids: neteaseSongId }),
+        this.request('/song/red/count', { id: neteaseSongId }),
+        this.request('/comment/music', { id: neteaseSongId, limit: '1', offset: '0' }),
+      ])
+      let publishTime = this.readSongDate(detail)
+      if (!publishTime && neteaseAlbumId) {
+        const album = await this.request('/album', { id: neteaseAlbumId })
+        publishTime = this.readNestedDate(album, 'album', 'publishTime')
+      }
+      return {
+        publishTime,
+        popularity: this.readSongNumber(detail, 'pop'),
+        redCount: this.readNestedNumber(red, 'data', 'count'),
+        commentCount: this.readNumber(comments, 'total'),
+      }
+    } catch {
+      return undefined
+    }
+  }
+
   private async persistManualSong(
     song: NeteaseSong,
     wikiTags?: NeteaseWikiTag[],
+    stats?: NeteaseCatalogStats,
   ): Promise<string> {
     return this.database.withTransaction(async (client) => {
-      const albumId = await this.upsertAlbum(client, song)
-      const songId = await this.upsertSong(client, song, albumId)
+      const albumId = await this.upsertAlbum(client, song, stats)
+      const songId = await this.upsertSong(client, song, albumId, stats)
       await client.query('DELETE FROM song_artists WHERE song_id = $1', [songId])
       for (const artist of song.ar) {
         const artistId = await this.upsertArtist(client, artist)
@@ -219,7 +258,11 @@ export class NeteaseManualImportService {
     })
   }
 
-  private async upsertAlbum(client: PoolClient, song: NeteaseSong): Promise<string> {
+  private async upsertAlbum(
+    client: PoolClient,
+    song: NeteaseSong,
+    stats?: NeteaseCatalogStats,
+  ): Promise<string> {
     const result = await client.query<ManualSongRow>(
       `INSERT INTO albums (
          netease_album_id, name, publish_time, cover_url, raw_json
@@ -234,7 +277,7 @@ export class NeteaseManualImportService {
       [
         String(song.al.id),
         song.al.name,
-        song.publishTime ? new Date(song.publishTime) : null,
+        stats?.publishTime ?? (song.publishTime ? new Date(song.publishTime) : null),
         song.al.picUrl ?? null,
         JSON.stringify(song.al),
       ],
@@ -242,12 +285,18 @@ export class NeteaseManualImportService {
     return this.requireRowId(result.rows[0], 'Failed to persist album')
   }
 
-  private async upsertSong(client: PoolClient, song: NeteaseSong, albumId: string): Promise<string> {
+  private async upsertSong(
+    client: PoolClient,
+    song: NeteaseSong,
+    albumId: string,
+    stats?: NeteaseCatalogStats,
+  ): Promise<string> {
     const result = await client.query<ManualSongRow>(
       `INSERT INTO songs (
          netease_song_id, name, alias, album_id, duration_ms, cover_url, netease_url,
-         netease_popularity, raw_json
-       ) VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7, $8, $9::jsonb)
+         netease_popularity, netease_red_count, netease_comment_count, netease_stats_updated_at,
+         raw_json
+       ) VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb)
        ON CONFLICT (netease_song_id) DO UPDATE SET
          name = EXCLUDED.name,
          alias = EXCLUDED.alias,
@@ -256,6 +305,9 @@ export class NeteaseManualImportService {
          cover_url = EXCLUDED.cover_url,
          netease_url = EXCLUDED.netease_url,
          netease_popularity = COALESCE(EXCLUDED.netease_popularity, songs.netease_popularity),
+         netease_red_count = COALESCE(EXCLUDED.netease_red_count, songs.netease_red_count),
+         netease_comment_count = COALESCE(EXCLUDED.netease_comment_count, songs.netease_comment_count),
+         netease_stats_updated_at = COALESCE(EXCLUDED.netease_stats_updated_at, songs.netease_stats_updated_at),
          raw_json = EXCLUDED.raw_json,
          updated_at = NOW()
        RETURNING id::text AS song_id`,
@@ -267,7 +319,10 @@ export class NeteaseManualImportService {
         song.dt ?? null,
         song.al.picUrl ?? null,
         `https://music.163.com/#/song?id=${song.id}`,
-        song.pop ?? null,
+        stats?.popularity ?? song.pop ?? null,
+        stats?.redCount ?? null,
+        stats?.commentCount ?? null,
+        stats ? new Date() : null,
         JSON.stringify(song),
       ],
     )
@@ -427,6 +482,29 @@ export class NeteaseManualImportService {
 
   private readTitle(value: Record<string, unknown> | null): string | null {
     return this.readString(this.readObjectValue(value, 'mainTitle'), 'title')
+  }
+
+  private readAlbumId(song: NeteaseSong): string | null {
+    return song.al.id > 0 ? String(song.al.id) : null
+  }
+
+  private readSongNumber(value: unknown, key: string): number | null {
+    const songs = this.readArrayValue(value, 'songs')
+    return songs ? this.readNumber(songs[0], key) : null
+  }
+
+  private readSongDate(value: unknown): Date | null {
+    const timestamp = this.readSongNumber(value, 'publishTime')
+    return timestamp && timestamp > 0 ? new Date(timestamp) : null
+  }
+
+  private readNestedNumber(value: unknown, section: string, key: string): number | null {
+    return this.readNumber(this.readObjectValue(value, section), key)
+  }
+
+  private readNestedDate(value: unknown, section: string, key: string): Date | null {
+    const timestamp = this.readNestedNumber(value, section, key)
+    return timestamp && timestamp > 0 ? new Date(timestamp) : null
   }
 
   private uniqueWikiTags(tags: NeteaseWikiTag[]): NeteaseWikiTag[] {

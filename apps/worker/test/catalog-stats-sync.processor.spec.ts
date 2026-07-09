@@ -42,7 +42,7 @@ describe('CatalogStatsSyncProcessor', () => {
       repository as unknown as CatalogStatsSyncRepository,
     )
     const job = {
-      data: { syncJobId: '88', limit: 100, missingOnly: true },
+      data: { syncJobId: '88', limit: null, missingOnly: true, all: true },
       updateProgress: vi.fn().mockResolvedValue(undefined),
       opts: { attempts: 3 },
       attemptsMade: 0,
@@ -50,7 +50,7 @@ describe('CatalogStatsSyncProcessor', () => {
 
     await processor.process(job)
 
-    expect(repository.findTargets).toHaveBeenCalledWith(100, true)
+    expect(repository.findTargets).toHaveBeenCalledWith(null, true)
     expect(netease.getCatalogStats).toHaveBeenCalledWith('99', '20')
     expect(repository.updateStats).toHaveBeenCalledWith(target, stats)
     expect(repository.recordSongItem).toHaveBeenCalledWith('88', expect.objectContaining({

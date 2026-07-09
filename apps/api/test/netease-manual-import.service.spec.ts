@@ -72,6 +72,7 @@ describe('NeteaseManualImportService', () => {
           al: { id: 20, name: 'THE BOOK 3', picUrl: 'https://example.test/cover.jpg' },
           dt: 213000,
           pop: 98,
+          publishTime: 1_704_153_600_000,
         }],
       }))
       .mockResolvedValueOnce(jsonResponse({
@@ -86,6 +87,17 @@ describe('NeteaseManualImportService', () => {
           }],
         },
       }))
+      .mockResolvedValueOnce(jsonResponse({
+        code: 200,
+        songs: [{
+          id: 99,
+          name: 'アイドル',
+          pop: 98,
+          publishTime: 1_704_153_600_000,
+        }],
+      }))
+      .mockResolvedValueOnce(jsonResponse({ code: 200, data: { count: 12345 } }))
+      .mockResolvedValueOnce(jsonResponse({ code: 200, total: 678 }))
     vi.stubGlobal('fetch', fetchMock)
 
     const query = vi.fn((sql: string) => {
@@ -104,6 +116,8 @@ describe('NeteaseManualImportService', () => {
     const result = await service.importSong({ neteaseSongId: '99' })
 
     expect(result.songId).toBe('99')
+    expect(result.redCount).toBe(12345)
+    expect(result.commentCount).toBe(678)
     expect(result.tags).toEqual([{ group: '曲风', value: 'J-Pop' }])
     expect(query).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO song_tags'), [
       '99',

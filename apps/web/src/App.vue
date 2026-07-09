@@ -190,6 +190,8 @@ type ManualSongImportResult = {
   songName: string
   artistNames: string[]
   albumName: string | null
+  redCount: number | null
+  commentCount: number | null
   tags: Array<{ group: string; value: string }>
 }
 
@@ -844,7 +846,7 @@ async function importManualSong(song: NeteaseSongSearchItem): Promise<void> {
     })
     if (!response.ok) throw new Error(await readError(response))
     const result = (await response.json()) as ManualSongImportResult
-    importMessage.value = `已添加单曲《${result.songName}》到候选库，保存 ${result.tags.length} 个网易云百科标签。`
+    importMessage.value = `已添加单曲《${result.songName}》到候选库，保存 ${result.tags.length} 个网易云百科标签，红心 ${result.redCount ?? '待同步'}，评论 ${result.commentCount ?? '待同步'}。`
     manualSongKeyword.value = ''
     manualSongResults.value = []
     await Promise.all([loadCandidates({ silent: true }), loadStats({ silent: true })])
@@ -886,11 +888,11 @@ async function startCatalogStatsSync(): Promise<void> {
     const response = await adminFetch('/api/admin/catalog/stats-sync', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ limit: 100, missingOnly: true }),
+      body: JSON.stringify({ all: true, missingOnly: true }),
     })
     if (!response.ok) throw new Error(await readError(response))
     const job = (await response.json()) as SyncJob
-    screeningMessage.value = `网易云统计同步任务 #${job.id} 已创建，本次补齐最多 100 首缺失红心/评论的歌曲。`
+    screeningMessage.value = `网易云统计同步任务 #${job.id} 已创建，将同步所有缺失红心/评论的歌曲；任务可能运行较久。`
     await loadJobs({ silent: true })
   } catch (error) {
     screeningError.value = error instanceof Error ? error.message : '创建网易云统计同步任务失败'
@@ -2151,9 +2153,9 @@ onUnmounted(() => {
             :loading="catalogStatsSyncLoading"
             @click="startCatalogStatsSync"
           >
-            同步缺失红心/评论 100 首
+            同步全部缺失红心/评论
           </el-button>
-          <span>导入时先保存基础元数据；红心数、评论数可在后台分批补齐。</span>
+          <span>新导入歌曲会尽量直接保存红心/评论；历史缺失数据可用这个后台任务一次补齐。</span>
         </div>
         <p v-if="screeningMessage" class="feedback success-feedback">{{ screeningMessage }}</p>
         <p v-if="screeningError" class="feedback error-feedback">{{ screeningError }}</p>

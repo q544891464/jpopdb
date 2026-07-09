@@ -32,8 +32,9 @@ export type ArtistSongImportJobData = {
 
 export type CatalogStatsSyncJobData = {
   syncJobId: string
-  limit: number
+  limit: number | null
   missingOnly: boolean
+  all: boolean
 }
 
 function getConnectionOptions(redisUrlValue: string): {

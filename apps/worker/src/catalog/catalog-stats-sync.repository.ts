@@ -86,11 +86,14 @@ export class CatalogStatsSyncRepository {
     )
   }
 
-  async findTargets(limit: number, missingOnly: boolean): Promise<CatalogStatsSyncTarget[]> {
+  async findTargets(limit: number | null, missingOnly: boolean): Promise<CatalogStatsSyncTarget[]> {
     const filter = missingOnly
       ? `(song.netease_red_count IS NULL OR song.netease_comment_count IS NULL)`
       : `(song.netease_stats_updated_at IS NULL
           OR song.netease_stats_updated_at < NOW() - INTERVAL '24 hours')`
+    const values: unknown[] = []
+    const limitClause = limit === null ? '' : 'LIMIT $1'
+    if (limit !== null) values.push(limit)
     const result = await this.pool.query<CatalogStatsTargetRow>(
       `SELECT
          song.id::text AS song_id,
@@ -109,8 +112,8 @@ export class CatalogStatsSyncRepository {
        WHERE ${filter}
        GROUP BY song.id, album.id
        ORDER BY song.netease_stats_updated_at ASC NULLS FIRST, song.id ASC
-       LIMIT $1`,
-      [limit],
+       ${limitClause}`,
+      values,
     )
 
     return result.rows.map((row) => ({

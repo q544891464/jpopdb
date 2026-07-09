@@ -1,6 +1,11 @@
 import type { Pool, PoolClient } from 'pg'
 
-import type { NeteasePlaylist, NeteaseSong, NeteaseWikiTag } from '../netease/netease.types'
+import type {
+  NeteaseCatalogStatsResult,
+  NeteasePlaylist,
+  NeteaseSong,
+  NeteaseWikiTag,
+} from '../netease/netease.types'
 
 export class PlaylistImportRepository {
   constructor(private readonly pool: Pool) {}
@@ -105,16 +110,18 @@ export class PlaylistImportRepository {
     song: NeteaseSong,
     position: number,
     wikiTags?: NeteaseWikiTag[],
+    catalogStats?: NeteaseCatalogStatsResult,
   ): Promise<string> {
-    return this.persistSongRecord(song, { playlistId, position, wikiTags })
+    return this.persistSongRecord(song, { playlistId, position, wikiTags, catalogStats })
   }
 
   async persistArtistSong(
     song: NeteaseSong,
     confirmedArtistName: string,
     wikiTags?: NeteaseWikiTag[],
+    catalogStats?: NeteaseCatalogStatsResult,
   ): Promise<string> {
-    return this.persistSongRecord(song, { confirmedArtistName, wikiTags })
+    return this.persistSongRecord(song, { confirmedArtistName, wikiTags, catalogStats })
   }
 
   async recordSongJobItem(
@@ -154,6 +161,7 @@ export class PlaylistImportRepository {
       position?: number
       confirmedArtistName?: string
       wikiTags?: NeteaseWikiTag[]
+      catalogStats?: NeteaseCatalogStatsResult
     },
   ): Promise<string> {
     const client = await this.pool.connect()
@@ -162,6 +170,9 @@ export class PlaylistImportRepository {
       await client.query('BEGIN')
       const albumId = await this.upsertAlbum(client, song)
       songId = await this.upsertSong(client, song, albumId)
+      if (source.catalogStats) {
+        await this.applyCatalogStats(client, songId, albumId, source.catalogStats)
+      }
 
       await client.query('DELETE FROM song_artists WHERE song_id = $1', [songId])
       for (const artist of song.ar) {
@@ -273,6 +284,32 @@ export class PlaylistImportRepository {
       throw new Error('Failed to persist album')
     }
     return row.id
+  }
+
+  private async applyCatalogStats(
+    client: PoolClient,
+    songId: string,
+    albumId: string,
+    stats: NeteaseCatalogStatsResult,
+  ): Promise<void> {
+    await client.query(
+      `UPDATE songs
+       SET netease_popularity = COALESCE($2, netease_popularity),
+           netease_red_count = COALESCE($3, netease_red_count),
+           netease_comment_count = COALESCE($4, netease_comment_count),
+           netease_stats_updated_at = NOW(),
+           updated_at = NOW()
+       WHERE id = $1`,
+      [songId, stats.popularity, stats.redCount, stats.commentCount],
+    )
+    if (stats.publishTime) {
+      await client.query(
+        `UPDATE albums
+         SET publish_time = COALESCE(publish_time, $2), updated_at = NOW()
+         WHERE id = $1`,
+        [albumId, stats.publishTime],
+      )
+    }
   }
 
   private async upsertSong(client: PoolClient, song: NeteaseSong, albumId: string): Promise<string> {

@@ -12,12 +12,13 @@ export class CatalogStatsSyncService {
   ) {}
 
   async create(body: unknown): Promise<SyncJobResponse> {
-    const limit = this.readPositiveInteger(body, 'limit', 100, 500)
+    const all = this.readBoolean(body, 'all', false)
+    const limit = all ? null : this.readPositiveInteger(body, 'limit', 1_000, 10_000)
     const missingOnly = this.readBoolean(body, 'missingOnly', true)
-    const job = await this.syncJobs.createCatalogStatsSync({ limit, missingOnly })
+    const job = await this.syncJobs.createCatalogStatsSync({ limit, missingOnly, all })
 
     try {
-      await this.queue.enqueueCatalogStatsSync({ syncJobId: job.id, limit, missingOnly })
+      await this.queue.enqueueCatalogStatsSync({ syncJobId: job.id, limit, missingOnly, all })
     } catch {
       await this.syncJobs.markQueueFailure(job.id, '任务队列暂不可用')
       throw new ServiceUnavailableException('任务队列暂不可用，请稍后重试')

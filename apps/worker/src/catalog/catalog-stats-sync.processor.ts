@@ -8,8 +8,9 @@ export const CATALOG_STATS_SYNC_JOB = 'catalog-stats-sync'
 
 export type CatalogStatsSyncJobData = {
   syncJobId: string
-  limit: number
+  limit: number | null
   missingOnly: boolean
+  all: boolean
 }
 
 export class CatalogStatsSyncProcessor {
@@ -19,14 +20,15 @@ export class CatalogStatsSyncProcessor {
   ) {}
 
   async process(job: Job<CatalogStatsSyncJobData>): Promise<void> {
-    const { syncJobId, limit, missingOnly } = job.data
+    const { syncJobId, limit, missingOnly, all } = job.data
     try {
       await this.repository.markRunning(syncJobId)
-      const targets = await this.repository.findTargets(limit, missingOnly)
+      const targets = await this.repository.findTargets(all ? null : limit, missingOnly)
       await this.repository.setTotal(syncJobId, targets.length)
       await this.repository.updateJobMetadata(syncJobId, {
         limit,
         missingOnly,
+        all,
         matchedSongCount: targets.length,
       })
 
@@ -48,7 +50,12 @@ export class CatalogStatsSyncProcessor {
             artistNames: target.artistNames,
             status: 'success',
             message: this.describeStats(stats),
-            raw: stats.raw,
+            raw: {
+              popularity: stats.popularity,
+              redCount: stats.redCount,
+              commentCount: stats.commentCount,
+              publishTime: stats.publishTime?.toISOString() ?? null,
+            },
           })
           successCount += 1
         } catch (error) {

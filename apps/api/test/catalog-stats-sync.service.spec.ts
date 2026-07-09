@@ -22,7 +22,7 @@ const syncJob = {
 }
 
 describe('CatalogStatsSyncService', () => {
-  it('creates and enqueues a bounded catalog stats sync job', async () => {
+  it('creates and enqueues an all-missing catalog stats sync job', async () => {
     const syncJobs = {
       createCatalogStatsSync: vi.fn().mockResolvedValue(syncJob),
       markQueueFailure: vi.fn(),
@@ -33,20 +33,22 @@ describe('CatalogStatsSyncService', () => {
       queue as unknown as QueueService,
     )
 
-    await expect(service.create({ limit: 100, missingOnly: true })).resolves.toEqual(syncJob)
+    await expect(service.create({ all: true, missingOnly: true })).resolves.toEqual(syncJob)
     expect(syncJobs.createCatalogStatsSync).toHaveBeenCalledWith({
-      limit: 100,
+      limit: null,
       missingOnly: true,
+      all: true,
     })
     expect(queue.enqueueCatalogStatsSync).toHaveBeenCalledWith({
       syncJobId: '88',
-      limit: 100,
+      limit: null,
       missingOnly: true,
+      all: true,
     })
   })
 
   it('rejects unsafe limits', async () => {
     const service = new CatalogStatsSyncService({} as SyncJobService, {} as QueueService)
-    await expect(service.create({ limit: 5_000 })).rejects.toBeInstanceOf(BadRequestException)
+    await expect(service.create({ limit: 50_000 })).rejects.toBeInstanceOf(BadRequestException)
   })
 })

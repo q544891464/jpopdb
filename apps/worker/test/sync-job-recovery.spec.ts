@@ -20,7 +20,7 @@ describe('recoverStuckSyncJobs', () => {
               id: '6',
               job_type: 'catalog_stats_sync',
               source_id: 'catalog_stats',
-              metadata: { limit: 100, missingOnly: true },
+              metadata: { limit: null, missingOnly: true, all: true },
             },
           ],
         })
@@ -73,7 +73,7 @@ describe('recoverStuckSyncJobs', () => {
     expect(queue.add).toHaveBeenNthCalledWith(
       6,
       'catalog-stats-sync',
-      { syncJobId: '6', limit: 100, missingOnly: true },
+      { syncJobId: '6', limit: null, missingOnly: true, all: true },
       { jobId: 'catalog-stats-sync-6' },
     )
   })

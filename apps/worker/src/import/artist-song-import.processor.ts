@@ -2,7 +2,7 @@ import type { Job } from 'bullmq'
 
 import { NeteaseApiError } from '../netease/netease.client'
 import type { NeteaseClient } from '../netease/netease.client'
-import type { NeteaseSong, NeteaseWikiTag } from '../netease/netease.types'
+import type { NeteaseCatalogStatsResult, NeteaseSong, NeteaseWikiTag } from '../netease/netease.types'
 import type { PlaylistImportRepository } from './playlist-import.repository'
 
 export const ARTIST_SONG_IMPORT_JOB = 'artist-song-import'
@@ -91,16 +91,15 @@ export class ArtistSongImportProcessor {
   ): Promise<boolean> {
     try {
       const wikiTags = await this.fetchWikiTags(song)
-      const songId = await this.repository.persistArtistSong(song, artistName, wikiTags)
+      const catalogStats = await this.fetchCatalogStats(song)
+      const songId = await this.repository.persistArtistSong(song, artistName, wikiTags, catalogStats)
       await this.repository.recordSongJobItem(syncJobId, {
         songId,
         neteaseSongId: String(song.id),
         songName: song.name,
         artistNames: song.ar.map((artist) => artist.name),
         status: 'success',
-        message: wikiTags
-          ? `已从确认艺人 ${artistName} 导入，保存 ${wikiTags.length} 个网易云百科标签`
-          : `已从确认艺人 ${artistName} 导入`,
+        message: this.importSuccessMessage(`已从确认艺人 ${artistName} 导入`, wikiTags, catalogStats),
         raw: song,
       })
       return true
@@ -125,6 +124,34 @@ export class ArtistSongImportProcessor {
     } catch {
       return undefined
     }
+  }
+
+  private async fetchCatalogStats(song: NeteaseSong): Promise<NeteaseCatalogStatsResult | undefined> {
+    try {
+      return await this.netease.getCatalogStats(String(song.id), this.readAlbumId(song))
+    } catch {
+      return undefined
+    }
+  }
+
+  private readAlbumId(song: NeteaseSong): string | null {
+    return song.al.id > 0 ? String(song.al.id) : null
+  }
+
+  private importSuccessMessage(
+    prefix: string,
+    wikiTags: NeteaseWikiTag[] | undefined,
+    stats: NeteaseCatalogStatsResult | undefined,
+  ): string {
+    const parts = [prefix]
+    if (wikiTags) parts.push(`保存 ${wikiTags.length} 个网易云百科标签`)
+    if (stats) {
+      parts.push(`红心 ${stats.redCount ?? '未知'}`)
+      parts.push(`评论 ${stats.commentCount ?? '未知'}`)
+    } else {
+      parts.push('红心/评论待后台同步')
+    }
+    return parts.join('，')
   }
 
   private describeError(error: unknown): string {
