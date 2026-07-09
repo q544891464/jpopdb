@@ -80,6 +80,7 @@ describe('App', () => {
                 popularity: 95,
                 redCount: 24413,
                 commentCount: 452,
+                tags: [{ source: 'netease_wiki', group: '曲风', name: 'J-Pop' }],
                 statsUpdatedAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString(),
                 neteaseDetail: {
@@ -156,6 +157,7 @@ describe('App', () => {
                     popularity: 95,
                     redCount: 24413,
                     commentCount: 452,
+                    tags: [{ source: 'netease_wiki', group: '曲风', name: 'J-Pop' }],
                     statsUpdatedAt: new Date().toISOString(),
                     updatedAt: new Date().toISOString(),
                   },
@@ -334,6 +336,7 @@ describe('App', () => {
     await detailButton?.trigger('click')
     await vi.waitFor(() => expect(catalogWrapper.text()).toContain('歌词摘要'))
     expect(catalogWrapper.text()).toContain('专辑详情')
+    expect(catalogWrapper.text()).toContain('已保存歌曲标签')
     expect(catalogWrapper.text()).toContain('网易云百科标签')
     expect(catalogWrapper.text()).toContain('音质元数据')
     expect(catalogWrapper.text()).toContain('当前公开数据库只展示歌词可用性')

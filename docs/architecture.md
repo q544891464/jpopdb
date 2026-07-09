@@ -220,13 +220,15 @@ recordReviewLog()
 ### 5.1 歌单导入数据流
 
 ```text
-输入歌单 ID
+输入歌单 ID 或网易云分享链接
         ↓
 NeteaseModule.getPlaylistDetail
         ↓
 保存 playlists
         ↓
 保存 songs / artists / albums
+        ↓
+尝试读取并保存网易云百科标签
         ↓
 保存 playlist_songs
         ↓

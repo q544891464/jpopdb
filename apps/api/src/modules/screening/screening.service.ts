@@ -184,7 +184,10 @@ export class ScreeningService {
              WHERE status = 'pending'
                AND score = 0
                AND reviewed_at IS NULL
-               AND reason->>'summary' = '已从网易云歌单导入，等待外部 API 初筛。'
+               AND reason->>'summary' IN (
+                 '已从网易云歌单导入，等待外部 API 初筛。',
+                 '手动添加网易云单曲，等待外部 API 初筛。'
+               )
            ) AS unscreened_songs,
            (
              SELECT count(*)::int

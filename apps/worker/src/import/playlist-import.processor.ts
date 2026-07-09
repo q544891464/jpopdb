@@ -2,7 +2,7 @@ import type { Job } from 'bullmq'
 
 import { NeteaseApiError } from '../netease/netease.client'
 import type { NeteaseClient } from '../netease/netease.client'
-import type { NeteaseSong } from '../netease/netease.types'
+import type { NeteaseSong, NeteaseWikiTag } from '../netease/netease.types'
 import type { PlaylistImportRepository } from './playlist-import.repository'
 
 export const PLAYLIST_IMPORT_JOB = 'playlist-import'
@@ -95,11 +95,20 @@ export class PlaylistImportProcessor {
     errors: string[],
   ): Promise<boolean> {
     try {
-      await this.repository.persistSong(playlistId, song, position)
+      const wikiTags = await this.fetchWikiTags(song)
+      await this.repository.persistSong(playlistId, song, position, wikiTags)
       return true
     } catch (error) {
       errors.push(`歌曲 ${song.id} 保存失败: ${this.describeError(error)}`)
       return false
+    }
+  }
+
+  private async fetchWikiTags(song: NeteaseSong): Promise<NeteaseWikiTag[] | undefined> {
+    try {
+      return (await this.netease.getSongWikiSummary(String(song.id))).tags
+    } catch {
+      return undefined
     }
   }
 

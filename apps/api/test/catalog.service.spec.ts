@@ -81,6 +81,7 @@ const detail = {
 }
 
 const artistRows = [{ song_id: '10', artists: row.artists }]
+const tagRows = [{ song_id: '10', tags: [{ source: 'netease_wiki', group: '曲风', name: 'J-Pop' }] }]
 
 describe('CatalogService', () => {
   it('returns song metadata and popularity without screening internals', async () => {
@@ -88,7 +89,8 @@ describe('CatalogService', () => {
       query: vi.fn()
         .mockResolvedValueOnce({ rows: [{ total: 1 }] })
         .mockResolvedValueOnce({ rows: [row] })
-        .mockResolvedValueOnce({ rows: artistRows }),
+        .mockResolvedValueOnce({ rows: artistRows })
+        .mockResolvedValueOnce({ rows: tagRows }),
     }
     const neteaseStats = { enrich: vi.fn().mockResolvedValue(freshStats) }
     const service = new CatalogService(
@@ -106,6 +108,7 @@ describe('CatalogService', () => {
       popularity: 92,
       redCount: 24_413,
       commentCount: 452,
+      tags: [{ source: 'netease_wiki', group: '曲风', name: 'J-Pop' }],
     }))
     const serialized = JSON.stringify(result)
     for (const forbidden of ['score', 'status', 'reason', 'evidence', 'lyricFallback', 'identityStatus']) {
@@ -119,7 +122,8 @@ describe('CatalogService', () => {
     const database = {
       query: vi.fn()
         .mockResolvedValueOnce({ rows: [row] })
-        .mockResolvedValueOnce({ rows: artistRows }),
+        .mockResolvedValueOnce({ rows: artistRows })
+        .mockResolvedValueOnce({ rows: tagRows }),
     }
     const neteaseStats = { enrich: vi.fn().mockResolvedValue(freshStats) }
     const neteaseDetail = { fetchDetail: vi.fn().mockResolvedValue(detail) }
@@ -134,6 +138,7 @@ describe('CatalogService', () => {
     expect(result.albumName).toBe('Test Album')
     expect(result.publishTime).toBe('2024-01-02T00:00:00.000Z')
     expect(result.redCount).toBe(24_413)
+    expect(result.tags).toEqual([{ source: 'netease_wiki', group: '曲风', name: 'J-Pop' }])
     expect(result.neteaseDetail?.lyric?.hasOriginal).toBe(true)
     expect(result.neteaseDetail?.album?.company).toBe('Test Label')
     expect(JSON.stringify(result)).not.toContain('rawLrc')
@@ -149,7 +154,8 @@ describe('CatalogService', () => {
       query: vi.fn()
         .mockResolvedValueOnce({ rows: [{ total: 1 }] })
         .mockResolvedValueOnce({ rows: [row] })
-        .mockResolvedValueOnce({ rows: artistRows }),
+        .mockResolvedValueOnce({ rows: artistRows })
+        .mockResolvedValueOnce({ rows: tagRows }),
     }
     const neteaseStats = { enrich: vi.fn().mockResolvedValue(freshStats) }
     const service = new CatalogService(
@@ -183,7 +189,8 @@ describe('CatalogService', () => {
       query: vi.fn()
         .mockResolvedValueOnce({ rows: [{ total: 1 }] })
         .mockResolvedValueOnce({ rows: [row] })
-        .mockResolvedValueOnce({ rows: artistRows }),
+        .mockResolvedValueOnce({ rows: artistRows })
+        .mockResolvedValueOnce({ rows: tagRows }),
     }
     const neteaseStats = { enrich: vi.fn().mockResolvedValue(freshStats) }
     const service = new CatalogService(

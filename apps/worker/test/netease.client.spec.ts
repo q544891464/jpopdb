@@ -62,6 +62,94 @@ describe('NeteaseClient', () => {
     expect(lyric.translatedLrc).toBe('[00:01.00]your song')
   })
 
+  it('searches songs and artists and normalizes result shapes', async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            code: 200,
+            result: {
+              songs: [{
+                id: 99,
+                name: 'アイドル',
+                artists: [{ id: 10, name: 'YOASOBI' }],
+                album: { id: 20, name: 'THE BOOK 3', picUrl: 'https://example.test/cover.jpg' },
+                duration: 213000,
+              }],
+            },
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            code: 200,
+            result: {
+              artists: [{
+                id: 10,
+                name: 'YOASOBI',
+                alias: ['ヨアソビ'],
+                img1v1Url: 'https://example.test/artist.jpg',
+              }],
+            },
+          }),
+          { status: 200 },
+        ),
+      )
+    const client = new NeteaseClient('http://netease.example', fetcher)
+
+    await expect(client.searchSongs('アイドル')).resolves.toEqual([{
+      neteaseSongId: '99',
+      songName: 'アイドル',
+      artists: [{ neteaseArtistId: '10', artistName: 'YOASOBI' }],
+      album: {
+        neteaseAlbumId: '20',
+        albumName: 'THE BOOK 3',
+        coverUrl: 'https://example.test/cover.jpg',
+      },
+      durationMs: 213000,
+    }])
+    await expect(client.searchArtists('YOASOBI')).resolves.toEqual([{
+      neteaseArtistId: '10',
+      artistName: 'YOASOBI',
+      aliases: ['ヨアソビ'],
+      coverUrl: 'https://example.test/artist.jpg',
+    }])
+  })
+
+  it('extracts song wiki tags from Netease wiki summary', async () => {
+    const fetcher = vi.fn().mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          code: 200,
+          data: {
+            blocks: [{
+              showType: 'SONG_PLAY_ABOUT_TAB_SONG_BASIC',
+              creatives: [{
+                uiElement: { mainTitle: { title: '曲风' } },
+                resources: [
+                  { uiElement: { mainTitle: { title: 'J-Pop' } } },
+                  { uiElement: { mainTitle: { title: 'Anime' } } },
+                ],
+              }],
+            }],
+          },
+        }),
+        { status: 200 },
+      ),
+    )
+    const client = new NeteaseClient('http://netease.example', fetcher)
+
+    const result = await client.getSongWikiSummary('99')
+
+    expect(result.tags.map((tag) => ({ group: tag.group, value: tag.value }))).toEqual([
+      { group: '曲风', value: 'J-Pop' },
+      { group: '曲风', value: 'Anime' },
+    ])
+  })
+
   it('paginates artist songs up to the configured safety limit', async () => {
     const makeSong = (id: number) => ({
       id,

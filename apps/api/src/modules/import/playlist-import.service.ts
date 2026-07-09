@@ -32,9 +32,22 @@ export class PlaylistImportService {
     const value = (body as { playlistId?: unknown }).playlistId
     const playlistId = typeof value === 'number' ? String(value) : value
 
-    if (typeof playlistId !== 'string' || !/^\d{1,20}$/u.test(playlistId.trim())) {
-      throw new BadRequestException('playlistId 必须是网易云歌单数字 ID')
+    if (typeof playlistId !== 'string') {
+      throw new BadRequestException('playlistId 必须是网易云歌单数字 ID 或分享链接')
     }
-    return playlistId.trim()
+    const parsed = this.extractPlaylistId(playlistId)
+    if (!parsed) {
+      throw new BadRequestException('playlistId 必须是网易云歌单数字 ID 或包含 id 的分享链接')
+    }
+    return parsed
+  }
+
+  private extractPlaylistId(value: string): string | null {
+    const trimmed = value.trim()
+    if (/^\d{1,20}$/u.test(trimmed)) return trimmed
+    const idParam = trimmed.match(/[?&#]id=(\d{1,20})(?:\D|$)/iu)
+    if (idParam?.[1]) return idParam[1]
+    const pathId = trimmed.match(/\/playlist\/(\d{1,20})(?:\D|$)/iu)
+    return pathId?.[1] ?? null
   }
 }

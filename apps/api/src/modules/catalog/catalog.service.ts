@@ -10,6 +10,7 @@ import type {
   CatalogSongDetail,
   CatalogSongListResponse,
   CatalogSongSummary,
+  CatalogSongTag,
 } from './catalog.types'
 import {
   NeteaseCatalogStatsService,
@@ -42,6 +43,11 @@ type CountRow = { total: number }
 type SongArtistRow = {
   song_id: string
   artists: unknown
+}
+
+type SongTagRow = {
+  song_id: string
+  tags: unknown
 }
 
 type CatalogArtistRow = {
@@ -183,10 +189,13 @@ export class CatalogService {
       [...values, request.limit, offset],
     )
     const artistsBySong = await this.loadArtists(result.rows.map((row) => row.song_id))
+    const tagsBySong = await this.loadTags(result.rows.map((row) => row.song_id))
     const stats = new Map(result.rows.map((row) => [row.song_id, this.cachedStats(row)]))
 
     return {
-      items: result.rows.map((row) => this.mapSong(row, stats.get(row.song_id), artistsBySong.get(row.song_id))),
+      items: result.rows.map((row) =>
+        this.mapSong(row, stats.get(row.song_id), artistsBySong.get(row.song_id), tagsBySong.get(row.song_id)),
+      ),
       page: request.page,
       limit: request.limit,
       total,
@@ -205,8 +214,14 @@ export class CatalogService {
     const row = result.rows[0]
     if (!row) throw new NotFoundException('Catalog song not found')
     const artistsBySong = await this.loadArtists([row.song_id])
+    const tagsBySong = await this.loadTags([row.song_id])
     const stats = await this.neteaseStats.enrich([this.statsTarget(row)])
-    const summary = this.mapSong(row, stats.get(row.song_id), artistsBySong.get(row.song_id))
+    const summary = this.mapSong(
+      row,
+      stats.get(row.song_id),
+      artistsBySong.get(row.song_id),
+      tagsBySong.get(row.song_id),
+    )
     const detail = await this.neteaseDetail.fetchDetail({
       neteaseSongId: row.netease_song_id,
       neteaseAlbumId: row.netease_album_id,
@@ -575,6 +590,27 @@ export class CatalogService {
     return new Map(result.rows.map((row) => [row.song_id, this.mapArtists(row.artists)]))
   }
 
+  private async loadTags(songIds: string[]): Promise<Map<string, CatalogSongTag[]>> {
+    if (songIds.length === 0) return new Map()
+    const result = await this.database.query<SongTagRow>(
+      `SELECT
+         song_id::text,
+         COALESCE(
+           jsonb_agg(jsonb_build_object(
+             'source', source,
+             'group', tag_group,
+             'name', tag_name
+           ) ORDER BY source, tag_group, tag_name),
+           '[]'::jsonb
+         ) AS tags
+       FROM song_tags
+       WHERE song_id = ANY($1::bigint[])
+       GROUP BY song_id`,
+      [songIds],
+    )
+    return new Map(result.rows.map((row) => [row.song_id, this.mapTags(row.tags)]))
+  }
+
   private async findSongPage(
     extraConditionSql: string,
     extraValues: Array<string | number>,
@@ -600,9 +636,12 @@ export class CatalogService {
       [...extraValues, limit, offset],
     )
     const artistsBySong = await this.loadArtists(result.rows.map((row) => row.song_id))
+    const tagsBySong = await this.loadTags(result.rows.map((row) => row.song_id))
     const stats = new Map(result.rows.map((row) => [row.song_id, this.cachedStats(row)]))
     return {
-      items: result.rows.map((row) => this.mapSong(row, stats.get(row.song_id), artistsBySong.get(row.song_id))),
+      items: result.rows.map((row) =>
+        this.mapSong(row, stats.get(row.song_id), artistsBySong.get(row.song_id), tagsBySong.get(row.song_id)),
+      ),
       page,
       limit,
       total,
@@ -614,6 +653,7 @@ export class CatalogService {
     row: CatalogSongRow,
     stats?: CatalogSongStats,
     artists?: CatalogArtistSummary[],
+    tags?: CatalogSongTag[],
   ): CatalogSongSummary {
     return {
       songId: row.song_id,
@@ -630,6 +670,7 @@ export class CatalogService {
       popularity: stats?.popularity ?? row.netease_popularity,
       redCount: stats?.redCount ?? null,
       commentCount: stats?.commentCount ?? null,
+      tags: tags ?? [],
       statsUpdatedAt: stats?.statsUpdatedAt?.toISOString() ?? null,
       updatedAt: row.updated_at.toISOString(),
     }
@@ -657,6 +698,18 @@ export class CatalogService {
         artistName: typeof item.artistName === 'string' ? item.artistName : 'Unknown artist',
         neteaseArtistId: item.neteaseArtistId === null ? null : String(item.neteaseArtistId),
       }))
+  }
+
+  private mapTags(value: unknown): CatalogSongTag[] {
+    if (!Array.isArray(value)) return []
+    return value
+      .filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null)
+      .flatMap((item) => {
+        const source = typeof item.source === 'string' ? item.source : ''
+        const group = typeof item.group === 'string' ? item.group : ''
+        const name = typeof item.name === 'string' ? item.name : ''
+        return source && group && name ? [{ source, group, name }] : []
+      })
   }
 
   private stringArray(value: unknown): string[] {

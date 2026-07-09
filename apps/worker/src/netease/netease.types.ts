@@ -46,11 +46,44 @@ export type NeteaseSongResult = {
   raw: unknown
 }
 
+export type NeteaseSearchSong = {
+  neteaseSongId: string
+  songName: string
+  artists: Array<{
+    neteaseArtistId: string | null
+    artistName: string
+  }>
+  album: {
+    neteaseAlbumId: string | null
+    albumName: string | null
+    coverUrl: string | null
+  }
+  durationMs: number | null
+}
+
+export type NeteaseSearchArtist = {
+  neteaseArtistId: string
+  artistName: string
+  aliases: string[]
+  coverUrl: string | null
+}
+
 export type NeteaseArtistSongsResult = {
   songs: NeteaseSong[]
   total: number
   truncated: boolean
   rawPages: unknown[]
+}
+
+export type NeteaseWikiTag = {
+  group: string
+  value: string
+  raw: unknown
+}
+
+export type NeteaseSongWikiResult = {
+  tags: NeteaseWikiTag[]
+  raw: unknown
 }
 
 export type NeteaseLyricResult = {

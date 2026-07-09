@@ -4,8 +4,12 @@ import type {
   NeteaseLyricResult,
   NeteasePlaylist,
   NeteasePlaylistResult,
+  NeteaseSearchArtist,
+  NeteaseSearchSong,
   NeteaseSong,
+  NeteaseSongWikiResult,
   NeteaseSongResult,
+  NeteaseWikiTag,
 } from './netease.types'
 
 type FetchLike = (input: string, init?: RequestInit) => Promise<Response>
@@ -52,11 +56,37 @@ export class NeteaseClient {
     return results
   }
 
+  async searchSongs(keyword: string, limit = 10): Promise<NeteaseSearchSong[]> {
+    const raw = await this.request('/search', {
+      keywords: keyword,
+      type: '1',
+      limit: String(Math.min(Math.max(Math.trunc(limit), 1), 30)),
+    })
+    return this.readSearchSongs(raw)
+  }
+
+  async searchArtists(keyword: string, limit = 10): Promise<NeteaseSearchArtist[]> {
+    const raw = await this.request('/search', {
+      keywords: keyword,
+      type: '100',
+      limit: String(Math.min(Math.max(Math.trunc(limit), 1), 30)),
+    })
+    return this.readSearchArtists(raw)
+  }
+
   async getLyric(songId: string): Promise<NeteaseLyricResult> {
     const raw = await this.request('/lyric', { id: songId })
     return {
       rawLrc: readNestedLyric(raw, 'lrc'),
       translatedLrc: readNestedLyric(raw, 'tlyric'),
+      raw,
+    }
+  }
+
+  async getSongWikiSummary(songId: string): Promise<NeteaseSongWikiResult> {
+    const raw = await this.request('/song/wiki/summary', { id: songId })
+    return {
+      tags: this.readWikiTags(raw),
       raw,
     }
   }
@@ -188,6 +218,55 @@ export class NeteaseClient {
     return payload.songs as NeteaseSong[]
   }
 
+  private readSearchSongs(payload: unknown): NeteaseSearchSong[] {
+    const result = this.readObjectValue(payload, 'result')
+    const songs = this.readArrayValue(result, 'songs')
+    if (!songs) return []
+    return songs.flatMap((item) => {
+      const id = this.readNumber(item, 'id')
+      const name = this.readString(item, 'name')
+      if (!id || !name) return []
+      const album = this.readObjectValue(item, 'album') ?? this.readObjectValue(item, 'al')
+      const artistValues = this.readArrayValue(item, 'artists') ?? this.readArrayValue(item, 'ar') ?? []
+      return [{
+        neteaseSongId: String(id),
+        songName: name,
+        artists: artistValues.flatMap((artist) => {
+          const artistName = this.readString(artist, 'name')
+          if (!artistName) return []
+          const artistId = this.readNumber(artist, 'id')
+          return [{
+            neteaseArtistId: artistId ? String(artistId) : null,
+            artistName,
+          }]
+        }),
+        album: {
+          neteaseAlbumId: this.positiveId(album, 'id'),
+          albumName: this.readString(album, 'name'),
+          coverUrl: this.readString(album, 'picUrl'),
+        },
+        durationMs: this.readNumber(item, 'duration') ?? this.readNumber(item, 'dt'),
+      }]
+    })
+  }
+
+  private readSearchArtists(payload: unknown): NeteaseSearchArtist[] {
+    const result = this.readObjectValue(payload, 'result')
+    const artists = this.readArrayValue(result, 'artists')
+    if (!artists) return []
+    return artists.flatMap((item) => {
+      const id = this.readNumber(item, 'id')
+      const name = this.readString(item, 'name')
+      if (!id || !name) return []
+      return [{
+        neteaseArtistId: String(id),
+        artistName: name,
+        aliases: this.stringArray((item as Record<string, unknown>).alias),
+        coverUrl: this.readString(item, 'picUrl') ?? this.readString(item, 'img1v1Url'),
+      }]
+    })
+  }
+
   private readArtistSongs(payload: unknown): {
     songs: NeteaseSong[]
     total: number
@@ -208,6 +287,66 @@ export class NeteaseClient {
         : payload.songs.length,
       more: 'more' in payload && payload.more === true,
     }
+  }
+
+  private readWikiTags(payload: unknown): NeteaseWikiTag[] {
+    const data = this.readObjectValue(payload, 'data')
+    const blocks = this.readArrayValue(data, 'blocks')
+    if (!blocks) return []
+    const musicBlock = blocks.find((block) =>
+      this.readString(block, 'showType') === 'SONG_PLAY_ABOUT_TAB_SONG_BASIC',
+    )
+    const creatives = this.readArrayValue(musicBlock, 'creatives')
+    if (!creatives) return []
+
+    return creatives.flatMap((creative) => {
+      const group = this.readTitle(this.readObjectValue(creative, 'uiElement')) ?? '网易云百科'
+      const resources = this.readArrayValue(creative, 'resources') ?? []
+      return resources.flatMap((resource) => {
+        const value = this.readTitle(this.readObjectValue(resource, 'uiElement'))
+        return value ? [{ group, value, raw: resource }] : []
+      })
+    })
+  }
+
+  private readTitle(value: Record<string, unknown> | null): string | null {
+    return this.readString(this.readObjectValue(value, 'mainTitle'), 'title')
+  }
+
+  private positiveId(value: unknown, key: string): string | null {
+    const id = this.readNumber(value, key)
+    return id && id > 0 ? String(id) : null
+  }
+
+  private readObjectValue(value: unknown, key: string): Record<string, unknown> | null {
+    if (typeof value !== 'object' || value === null || !(key in value)) return null
+    const nested = (value as Record<string, unknown>)[key]
+    return typeof nested === 'object' && nested !== null && !Array.isArray(nested)
+      ? nested as Record<string, unknown>
+      : null
+  }
+
+  private readArrayValue(value: unknown, key: string): unknown[] | null {
+    if (typeof value !== 'object' || value === null || !(key in value)) return null
+    const nested = (value as Record<string, unknown>)[key]
+    return Array.isArray(nested) ? nested : null
+  }
+
+  private readNumber(value: unknown, key: string): number | null {
+    if (typeof value !== 'object' || value === null || !(key in value)) return null
+    const result = (value as Record<string, unknown>)[key]
+    return typeof result === 'number' && Number.isFinite(result) ? result : null
+  }
+
+  private readString(value: unknown, key: string): string | null {
+    if (typeof value !== 'object' || value === null || !(key in value)) return null
+    const result = (value as Record<string, unknown>)[key]
+    return typeof result === 'string' && result.trim() ? result.trim() : null
+  }
+
+  private stringArray(value: unknown): string[] {
+    if (!Array.isArray(value)) return []
+    return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
   }
 
   private normalizeError(error: unknown): NeteaseApiError {

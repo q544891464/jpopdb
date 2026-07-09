@@ -18,6 +18,7 @@ import { NeteaseCatalogDetailService } from './modules/catalog/netease-catalog-d
 import { NeteaseCatalogStatsService } from './modules/catalog/netease-catalog-stats.service'
 import { ImportController } from './modules/import/import.controller'
 import { ArtistSongImportService } from './modules/import/artist-song-import.service'
+import { NeteaseManualImportService } from './modules/import/netease-manual-import.service'
 import { PlaylistImportService } from './modules/import/playlist-import.service'
 import { SyncJobService } from './modules/import/sync-job.service'
 import { ScreeningController } from './modules/screening/screening.controller'
@@ -51,6 +52,7 @@ import { ScreeningService } from './modules/screening/screening.service'
     SyncJobService,
     PlaylistImportService,
     ArtistSongImportService,
+    NeteaseManualImportService,
     ScreeningService,
     CatalogService,
     NeteaseCatalogDetailService,

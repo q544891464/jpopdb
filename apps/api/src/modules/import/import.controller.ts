@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Inject, Param, Post, UseGuards } from '@nestjs/common'
+import { Body, Controller, Get, Inject, Param, Post, Query, UseGuards } from '@nestjs/common'
 
 import { AdminAuthGuard } from '../admin/admin-auth.guard'
 import {
@@ -8,6 +8,12 @@ import {
 import { PlaylistImportService } from './playlist-import.service'
 import type { SyncJobResponse } from './sync-job.types'
 import { SyncJobService } from './sync-job.service'
+import {
+  NeteaseManualImportService,
+  type ManualSongImportResponse,
+  type NeteaseArtistSearchItem,
+  type NeteaseSongSearchItem,
+} from './netease-manual-import.service'
 
 @Controller('api/admin')
 @UseGuards(AdminAuthGuard)
@@ -15,6 +21,7 @@ export class ImportController {
   constructor(
     @Inject(PlaylistImportService) private readonly playlistImports: PlaylistImportService,
     @Inject(ArtistSongImportService) private readonly artistSongImports: ArtistSongImportService,
+    @Inject(NeteaseManualImportService) private readonly neteaseManualImports: NeteaseManualImportService,
     @Inject(SyncJobService) private readonly syncJobs: SyncJobService,
   ) {}
 
@@ -26,6 +33,25 @@ export class ImportController {
   @Post('import/artist/manual')
   async importManualArtist(@Body() body: unknown): Promise<SyncJobResponse> {
     return this.artistSongImports.createManualArtistImport(body)
+  }
+
+  @Get('import/search/songs')
+  async searchSongs(
+    @Query() query: unknown,
+  ): Promise<{ items: NeteaseSongSearchItem[] }> {
+    return this.neteaseManualImports.searchSongs(query)
+  }
+
+  @Get('import/search/artists')
+  async searchArtists(
+    @Query() query: unknown,
+  ): Promise<{ items: NeteaseArtistSearchItem[] }> {
+    return this.neteaseManualImports.searchArtists(query)
+  }
+
+  @Post('import/song/manual')
+  async importManualSong(@Body() body: unknown): Promise<ManualSongImportResponse> {
+    return this.neteaseManualImports.importSong(body)
   }
 
   @Post('import/artist/:artistId')

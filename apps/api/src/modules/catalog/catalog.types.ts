@@ -4,6 +4,12 @@ export type CatalogArtistSummary = {
   neteaseArtistId: string | null
 }
 
+export type CatalogSongTag = {
+  source: string
+  group: string
+  name: string
+}
+
 export type CatalogArtistListItem = CatalogArtistSummary & {
   songCount: number
   albumCount: number
@@ -27,6 +33,7 @@ export type CatalogSongSummary = {
   popularity: number | null
   redCount: number | null
   commentCount: number | null
+  tags: CatalogSongTag[]
   statsUpdatedAt: string | null
   updatedAt: string
 }

@@ -85,6 +85,11 @@ Netease music encyclopedia style/tag groups
 quality level metadata such as bitrate and file size
 ```
 
+When songs are imported from playlist, artist import, or manual song search,
+the backend should try to fetch `/song/wiki/summary` and persist normalized
+encyclopedia tags into `song_tags` with source `netease_wiki`. A failed wiki
+request must not fail the song import.
+
 Do not expose raw lyric text from `/lyric`, translated lyric text, romanized
 lyric text, Netease cookies, or any audio URL. Endpoints such as `/song/url`
 remain outside the first-phase catalog.

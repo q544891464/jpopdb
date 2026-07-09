@@ -1,6 +1,6 @@
 import type { Pool, PoolClient } from 'pg'
 
-import type { NeteasePlaylist, NeteaseSong } from '../netease/netease.types'
+import type { NeteasePlaylist, NeteaseSong, NeteaseWikiTag } from '../netease/netease.types'
 
 export class PlaylistImportRepository {
   constructor(private readonly pool: Pool) {}
@@ -100,12 +100,21 @@ export class PlaylistImportRepository {
     return row.id
   }
 
-  async persistSong(playlistId: string, song: NeteaseSong, position: number): Promise<void> {
-    await this.persistSongRecord(song, { playlistId, position })
+  async persistSong(
+    playlistId: string,
+    song: NeteaseSong,
+    position: number,
+    wikiTags?: NeteaseWikiTag[],
+  ): Promise<void> {
+    await this.persistSongRecord(song, { playlistId, position, wikiTags })
   }
 
-  async persistArtistSong(song: NeteaseSong, confirmedArtistName: string): Promise<void> {
-    await this.persistSongRecord(song, { confirmedArtistName })
+  async persistArtistSong(
+    song: NeteaseSong,
+    confirmedArtistName: string,
+    wikiTags?: NeteaseWikiTag[],
+  ): Promise<void> {
+    await this.persistSongRecord(song, { confirmedArtistName, wikiTags })
   }
 
   private async persistSongRecord(
@@ -114,6 +123,7 @@ export class PlaylistImportRepository {
       playlistId?: string
       position?: number
       confirmedArtistName?: string
+      wikiTags?: NeteaseWikiTag[]
     },
   ): Promise<void> {
     const client = await this.pool.connect()
@@ -183,6 +193,9 @@ export class PlaylistImportRepository {
            created_at = NOW()`,
         [songId, String(song.id), song.name, JSON.stringify(song)],
       )
+      if (source.wikiTags !== undefined) {
+        await this.replaceSongTags(client, songId, source.wikiTags)
+      }
       await client.query('COMMIT')
     } catch (error) {
       await client.query('ROLLBACK')
@@ -289,6 +302,40 @@ export class PlaylistImportRepository {
       throw new Error('Failed to persist artist')
     }
     return row.id
+  }
+
+  private async replaceSongTags(
+    client: PoolClient,
+    songId: string,
+    wikiTags: NeteaseWikiTag[],
+  ): Promise<void> {
+    await client.query(
+      `DELETE FROM song_tags
+       WHERE song_id = $1 AND source = 'netease_wiki'`,
+      [songId],
+    )
+    for (const tag of this.uniqueWikiTags(wikiTags)) {
+      await client.query(
+        `INSERT INTO song_tags (
+           song_id, source, tag_group, tag_name, raw_json
+         ) VALUES ($1, 'netease_wiki', $2, $3, $4::jsonb)
+         ON CONFLICT (song_id, source, tag_group, tag_name) DO UPDATE SET
+           raw_json = EXCLUDED.raw_json,
+           updated_at = NOW()`,
+        [songId, tag.group, tag.value, JSON.stringify(tag.raw ?? {})],
+      )
+    }
+  }
+
+  private uniqueWikiTags(tags: NeteaseWikiTag[]): NeteaseWikiTag[] {
+    const result = new Map<string, NeteaseWikiTag>()
+    for (const tag of tags) {
+      const group = tag.group.trim().slice(0, 100)
+      const value = tag.value.trim().slice(0, 255)
+      if (!group || !value) continue
+      result.set(`${group}\u0000${value}`, { ...tag, group, value })
+    }
+    return [...result.values()]
   }
 
   private collectAliases(...values: unknown[]): string[] {

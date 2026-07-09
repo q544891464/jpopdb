@@ -300,6 +300,11 @@ h3 {
   padding: 28px;
 }
 
+.compact-copy {
+  margin: 10px 0 0;
+  font-size: 0.84rem;
+}
+
 .accent-panel {
   background: linear-gradient(145deg, rgba(255, 255, 255, 0.92), rgba(255, 244, 248, 0.92));
 }
@@ -352,6 +357,53 @@ h3 {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 12px;
+}
+
+.manual-song-panel {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+  padding: 14px;
+  border: 1px solid #eee2ea;
+  border-radius: 18px;
+  background: #fff9fc;
+}
+
+.manual-song-panel p {
+  margin: 6px 0 0;
+}
+
+.manual-search-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+}
+
+.manual-result-list {
+  display: grid;
+  gap: 10px;
+}
+
+.manual-result-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid #eee8ef;
+  border-radius: 16px;
+  background: #fff;
+}
+
+.manual-result-card p {
+  margin: 4px 0;
+  font-size: 0.82rem;
+}
+
+.manual-result-card small {
+  color: #928894;
+  font-size: 0.74rem;
+  font-weight: 800;
 }
 
 .feedback {
@@ -901,6 +953,17 @@ h3 {
   flex-wrap: wrap;
 }
 
+.compact-tags {
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.compact-tags span {
+  min-height: 24px;
+  padding: 4px 8px;
+  font-size: 0.72rem;
+}
+
 .catalog-tag-list span,
 .catalog-wiki-groups span {
   display: inline-flex;
@@ -1099,7 +1162,7 @@ h3 {
   border-radius: 20px;
   display: grid;
   gap: 14px;
-  grid-template-columns: minmax(220px, 1.3fr) minmax(160px, 0.7fr) minmax(180px, 0.8fr) auto;
+  grid-template-columns: minmax(220px, 1.3fr) minmax(240px, 0.9fr) auto;
   margin: 16px 0 18px;
   padding: 16px;
 }
@@ -1547,7 +1610,8 @@ h3 {
     grid-template-columns: 1fr;
   }
 
-  .manual-artist-form {
+  .manual-artist-form,
+  .manual-result-card {
     grid-template-columns: 1fr;
   }
 
@@ -1650,6 +1714,7 @@ h3 {
 
   .input-row,
   .catalog-search-panel,
+  .manual-search-form,
   .catalog-card,
   .catalog-detail-heading {
     grid-template-columns: 1fr;

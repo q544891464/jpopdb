@@ -149,10 +149,47 @@ type ConfirmedArtistImportResult = {
   jobs: SyncJob[]
 }
 
+type NeteaseSongSearchItem = {
+  neteaseSongId: string
+  songName: string
+  artists: Array<{
+    neteaseArtistId: string | null
+    artistName: string
+  }>
+  album: {
+    neteaseAlbumId: string | null
+    albumName: string | null
+    coverUrl: string | null
+  }
+  durationMs: number | null
+}
+
+type NeteaseArtistSearchItem = {
+  neteaseArtistId: string
+  artistName: string
+  aliases: string[]
+  coverUrl: string | null
+}
+
+type ManualSongImportResult = {
+  songId: string
+  neteaseSongId: string
+  songName: string
+  artistNames: string[]
+  albumName: string | null
+  tags: Array<{ group: string; value: string }>
+}
+
 type CatalogArtist = {
   artistId: string
   artistName: string
   neteaseArtistId: string | null
+}
+
+type CatalogSongTag = {
+  source: string
+  group: string
+  name: string
 }
 
 type CatalogArtistListItem = CatalogArtist & {
@@ -178,6 +215,7 @@ type CatalogSong = {
   popularity: number | null
   redCount: number | null
   commentCount: number | null
+  tags: CatalogSongTag[]
   statsUpdatedAt: string | null
   updatedAt: string
 }
@@ -295,9 +333,14 @@ const screeningLoading = ref(false)
 const screeningMessage = ref('')
 const screeningError = ref('')
 const screeningLimit = ref(50)
-const manualArtistNeteaseId = ref('')
-const manualArtistName = ref('')
-const manualArtistImportLoading = ref(false)
+const manualSongKeyword = ref('')
+const manualSongResults = ref<NeteaseSongSearchItem[]>([])
+const manualSongSearchLoading = ref(false)
+const manualSongImportingId = ref<string | null>(null)
+const manualArtistKeyword = ref('')
+const manualArtistResults = ref<NeteaseArtistSearchItem[]>([])
+const manualArtistSearchLoading = ref(false)
+const manualArtistImportingId = ref<string | null>(null)
 const jobs = ref<SyncJob[]>([])
 const jobsLoading = ref(true)
 const stats = ref<ScreeningStats | null>(null)
@@ -707,8 +750,8 @@ async function startImport(): Promise<void> {
   const value = playlistId.value.trim()
   importMessage.value = ''
   importError.value = ''
-  if (!/^\d{1,20}$/u.test(value)) {
-    importError.value = '请输入有效的网易云歌单数字 ID。'
+  if (!value) {
+    importError.value = '请输入网易云歌单 ID 或分享链接。'
     return
   }
   importLoading.value = true
@@ -727,6 +770,52 @@ async function startImport(): Promise<void> {
     importError.value = error instanceof Error ? error.message : '创建导入任务失败'
   } finally {
     importLoading.value = false
+  }
+}
+
+async function searchManualSongs(): Promise<void> {
+  const keyword = manualSongKeyword.value.trim()
+  importMessage.value = ''
+  importError.value = ''
+  if (!keyword) {
+    importError.value = '请输入歌曲名后再搜索。'
+    return
+  }
+  manualSongSearchLoading.value = true
+  try {
+    const params = new URLSearchParams({ q: keyword, limit: '8' })
+    const response = await adminFetch(`/api/admin/import/search/songs?${params.toString()}`)
+    if (!response.ok) throw new Error(await readError(response))
+    const payload = (await response.json()) as { items: NeteaseSongSearchItem[] }
+    manualSongResults.value = payload.items
+    if (payload.items.length === 0) importError.value = '没有搜索到匹配歌曲，请换一个关键词。'
+  } catch (error) {
+    importError.value = error instanceof Error ? error.message : '搜索歌曲失败'
+  } finally {
+    manualSongSearchLoading.value = false
+  }
+}
+
+async function importManualSong(song: NeteaseSongSearchItem): Promise<void> {
+  manualSongImportingId.value = song.neteaseSongId
+  importMessage.value = ''
+  importError.value = ''
+  try {
+    const response = await adminFetch('/api/admin/import/song/manual', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ neteaseSongId: song.neteaseSongId }),
+    })
+    if (!response.ok) throw new Error(await readError(response))
+    const result = (await response.json()) as ManualSongImportResult
+    importMessage.value = `已添加单曲《${result.songName}》到候选库，保存 ${result.tags.length} 个网易云百科标签。`
+    manualSongKeyword.value = ''
+    manualSongResults.value = []
+    await Promise.all([loadCandidates({ silent: true }), loadStats({ silent: true })])
+  } catch (error) {
+    importError.value = error instanceof Error ? error.message : '手动添加单曲失败'
+  } finally {
+    manualSongImportingId.value = null
   }
 }
 
@@ -906,36 +995,53 @@ async function importConfirmedArtists(): Promise<void> {
   }
 }
 
-async function importManualArtistSongs(): Promise<void> {
-  const neteaseArtistId = manualArtistNeteaseId.value.trim()
-  const artistName = manualArtistName.value.trim()
+async function searchManualArtists(): Promise<void> {
   screeningMessage.value = ''
   screeningError.value = ''
-  if (!/^\d{1,20}$/u.test(neteaseArtistId)) {
-    screeningError.value = '请输入有效的网易云艺人数字 ID。'
+  const keyword = manualArtistKeyword.value.trim()
+  if (!keyword) {
+    screeningError.value = '请输入艺人名后再搜索。'
     return
   }
-  manualArtistImportLoading.value = true
+  manualArtistSearchLoading.value = true
+  try {
+    const params = new URLSearchParams({ q: keyword, limit: '8' })
+    const response = await adminFetch(`/api/admin/import/search/artists?${params.toString()}`)
+    if (!response.ok) throw new Error(await readError(response))
+    const payload = (await response.json()) as { items: NeteaseArtistSearchItem[] }
+    manualArtistResults.value = payload.items
+    if (payload.items.length === 0) screeningError.value = '没有搜索到匹配艺人，请换一个关键词。'
+  } catch (error) {
+    screeningError.value = error instanceof Error ? error.message : '搜索艺人失败'
+  } finally {
+    manualArtistSearchLoading.value = false
+  }
+}
+
+async function importManualArtistSongs(artist: NeteaseArtistSearchItem): Promise<void> {
+  screeningMessage.value = ''
+  screeningError.value = ''
+  manualArtistImportingId.value = artist.neteaseArtistId
   try {
     const response = await adminFetch('/api/admin/import/artist/manual', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        neteaseArtistId,
-        artistName: artistName || undefined,
+        neteaseArtistId: artist.neteaseArtistId,
+        artistName: artist.artistName,
         maxSongs: 500,
       }),
     })
     if (!response.ok) throw new Error(await readError(response))
     const job = (await response.json()) as SyncJob
-    screeningMessage.value = `已手动添加网易云艺人 ${artistName || neteaseArtistId}，并创建歌曲导入任务 #${job.id}。`
-    manualArtistNeteaseId.value = ''
-    manualArtistName.value = ''
+    screeningMessage.value = `已添加网易云艺人 ${artist.artistName}，并创建歌曲导入任务 #${job.id}。`
+    manualArtistKeyword.value = ''
+    manualArtistResults.value = []
     await Promise.all([loadJobs({ silent: true }), loadArtistIdentities({ silent: true })])
   } catch (error) {
     screeningError.value = error instanceof Error ? error.message : '手动添加艺人失败'
   } finally {
-    manualArtistImportLoading.value = false
+    manualArtistImportingId.value = null
   }
 }
 
@@ -1088,7 +1194,10 @@ function isUnscreenedCandidate(song: CandidateSong): boolean {
     song.status === 'pending' &&
     song.score === 0 &&
     song.reviewedAt === null &&
-    song.reason?.summary === '已从网易云歌单导入，等待外部 API 初筛。'
+    (
+      song.reason?.summary === '已从网易云歌单导入，等待外部 API 初筛。' ||
+      song.reason?.summary === '手动添加网易云单曲，等待外部 API 初筛。'
+    )
   )
 }
 
@@ -1106,6 +1215,14 @@ function scoreTagType(song: CandidateSong): 'success' | 'warning' | 'danger' | '
 
 function catalogArtistNames(song: CatalogSong): string {
   return song.artists.map((artist) => artist.artistName).join(' / ') || '未知歌手'
+}
+
+function songSearchArtistNames(song: NeteaseSongSearchItem): string {
+  return song.artists.map((artist) => artist.artistName).join(' / ') || '未知歌手'
+}
+
+function catalogTags(song: CatalogSong): CatalogSongTag[] {
+  return Array.isArray(song.tags) ? song.tags : []
 }
 
 function catalogCoverStyle(song: CatalogSong): Record<string, string> {
@@ -1599,6 +1716,11 @@ onUnmounted(() => {
                 <span>{{ formatDuration(song.durationMs) }}</span>
                 <span>{{ formatCatalogDate(song.publishTime) }}</span>
               </p>
+              <div v-if="catalogTags(song).length" class="catalog-tag-list compact-tags">
+                <span v-for="tag in catalogTags(song).slice(0, 4)" :key="`${song.songId}-${tag.group}-${tag.name}`">
+                  {{ tag.name }}
+                </span>
+              </div>
               <div class="catalog-stats" aria-label="网易云歌曲统计">
                 <span><strong>{{ formatCompactNumber(song.redCount) }}</strong> 红心</span>
                 <span><strong>{{ formatCompactNumber(song.commentCount) }}</strong> 评论</span>
@@ -1669,6 +1791,16 @@ onUnmounted(() => {
                 <div><span>MV ID</span><strong>{{ selectedCatalogSong.neteaseDetail?.mvId || '无' }}</strong></div>
                 <div><span>版权可用性</span><strong>{{ availabilityText(selectedCatalogSong.neteaseDetail) }}</strong></div>
                 <div><span>实时来源</span><strong>{{ sourceText(selectedCatalogSong.neteaseDetail) }}</strong></div>
+              </div>
+            </section>
+
+            <section v-if="catalogTags(selectedCatalogSong).length" class="drawer-section">
+              <h3>已保存歌曲标签</h3>
+              <div class="catalog-wiki-groups">
+                <div v-for="tag in catalogTags(selectedCatalogSong)" :key="`${tag.group}-${tag.name}`">
+                  <strong>{{ tag.group }}</strong>
+                  <span>{{ tag.name }}</span>
+                </div>
               </div>
             </section>
 
@@ -1850,9 +1982,41 @@ onUnmounted(() => {
         <p class="eyebrow">PHASE 1</p>
         <h2>导入网易云歌单</h2>
         <form class="input-row" @submit.prevent="startImport">
-          <el-input v-model="playlistId" inputmode="numeric" maxlength="20" placeholder="歌单 ID，例如 60198" />
+          <el-input v-model="playlistId" clearable placeholder="歌单 ID 或分享链接，例如 https://music.163.com/#/playlist?id=60198" />
           <el-button native-type="submit" type="primary" :loading="importLoading">开始导入</el-button>
         </form>
+        <p class="panel-copy compact-copy">
+          可以粘贴网易云歌单分享链接，系统会自动提取歌单 ID。
+        </p>
+        <div class="manual-song-panel">
+          <div>
+            <strong>手动添加单曲</strong>
+            <p class="muted">输入歌曲名搜索，确认结果后添加到候选库；入库时会保存网易云百科标签。</p>
+          </div>
+          <form class="manual-search-form" @submit.prevent="searchManualSongs">
+            <el-input v-model="manualSongKeyword" clearable placeholder="例如 アイドル / Idol / YOASOBI" />
+            <el-button native-type="submit" :loading="manualSongSearchLoading">搜索歌曲</el-button>
+          </form>
+          <div v-if="manualSongResults.length" class="manual-result-list">
+            <article v-for="song in manualSongResults" :key="song.neteaseSongId" class="manual-result-card">
+              <div>
+                <strong>{{ song.songName }}</strong>
+                <p class="muted">
+                  {{ songSearchArtistNames(song) }} · {{ song.album.albumName || '未知专辑' }} · {{ formatDuration(song.durationMs) }}
+                </p>
+                <small>网易云歌曲 ID {{ song.neteaseSongId }}</small>
+              </div>
+              <el-button
+                size="small"
+                type="primary"
+                :loading="manualSongImportingId === song.neteaseSongId"
+                @click="importManualSong(song)"
+              >
+                添加此歌
+              </el-button>
+            </article>
+          </div>
+        </div>
         <p v-if="importMessage" class="feedback success-feedback">{{ importMessage }}</p>
         <p v-if="importError" class="feedback error-feedback">{{ importError }}</p>
       </article>
@@ -2056,23 +2220,36 @@ onUnmounted(() => {
       <p class="section-note">
         新确认的日本艺人会自动创建歌曲导入任务；批量操作优先处理从未导入的艺人，每位最多 500 首，重复执行会按网易云歌曲 ID 去重。
       </p>
-      <form class="manual-artist-form" @submit.prevent="importManualArtistSongs">
+      <form class="manual-artist-form" @submit.prevent="searchManualArtists">
         <div>
           <strong>手动添加网易云艺人</strong>
-          <p class="muted">输入网易云艺人 ID 后会标记为人工确认日本艺人，并立即导入该艺人的关联歌曲。</p>
+          <p class="muted">输入艺人名搜索，选择正确结果后会标记为人工确认日本艺人，并立即导入该艺人的关联歌曲。</p>
         </div>
         <label>
-          <span>网易云艺人 ID</span>
-          <el-input v-model="manualArtistNeteaseId" clearable placeholder="例如 33927412" />
+          <span>艺人名称</span>
+          <el-input v-model="manualArtistKeyword" clearable placeholder="例如 YOASOBI / Aimer" />
         </label>
-        <label>
-          <span>艺人名称（可选）</span>
-          <el-input v-model="manualArtistName" clearable placeholder="例如 YOASOBI" />
-        </label>
-        <el-button native-type="submit" type="primary" :loading="manualArtistImportLoading">
-          添加并导入歌曲
+        <el-button native-type="submit" type="primary" :loading="manualArtistSearchLoading">
+          搜索艺人
         </el-button>
       </form>
+      <div v-if="manualArtistResults.length" class="manual-result-list artist-result-list">
+        <article v-for="artist in manualArtistResults" :key="artist.neteaseArtistId" class="manual-result-card">
+          <div>
+            <strong>{{ artist.artistName }}</strong>
+            <p class="muted">{{ artist.aliases.length ? `别名：${artist.aliases.join(' / ')}` : '暂无别名' }}</p>
+            <small>网易云艺人 ID {{ artist.neteaseArtistId }}</small>
+          </div>
+          <el-button
+            size="small"
+            type="primary"
+            :loading="manualArtistImportingId === artist.neteaseArtistId"
+            @click="importManualArtistSongs(artist)"
+          >
+            添加并导入歌曲
+          </el-button>
+        </article>
+      </div>
 
       <el-skeleton v-if="artistIdentitiesLoading" :rows="4" animated />
       <div v-else-if="artistIdentitiesError" class="empty-state error-state">

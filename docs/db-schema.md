@@ -65,7 +65,33 @@ CREATE TABLE song_artists (
 );
 ```
 
-## 5. playlists 歌单来源表
+## 5. song_tags 歌曲标签表
+
+用于保存导入时从网易云百科摘要提取的歌曲标签。
+
+```sql
+CREATE TABLE song_tags (
+  song_id BIGINT NOT NULL REFERENCES songs(id) ON DELETE CASCADE,
+  source VARCHAR(50) NOT NULL,
+  tag_group VARCHAR(100) NOT NULL DEFAULT '',
+  tag_name VARCHAR(255) NOT NULL,
+  raw_json JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (song_id, source, tag_group, tag_name)
+);
+```
+
+字段说明：
+
+```text
+source：标签来源，当前使用 netease_wiki
+tag_group：网易云百科标签分组，例如 曲风 / 语种
+tag_name：具体标签名，例如 J-Pop
+raw_json：该标签对应的网易云原始片段，方便后续排查
+```
+
+## 6. playlists 歌单来源表
 
 ```sql
 CREATE TABLE playlists (
@@ -83,7 +109,7 @@ CREATE TABLE playlists (
 );
 ```
 
-## 6. playlist_songs 歌单歌曲关系表
+## 7. playlist_songs 歌单歌曲关系表
 
 ```sql
 CREATE TABLE playlist_songs (
@@ -95,7 +121,7 @@ CREATE TABLE playlist_songs (
 );
 ```
 
-## 7. external_matches 外部 API 匹配表
+## 8. external_matches 外部 API 匹配表
 
 用于保存 MusicBrainz、Wikidata、Last.fm 等外部匹配结果。
 
@@ -132,7 +158,7 @@ CREATE INDEX idx_external_matches_source ON external_matches(source);
 CREATE INDEX idx_external_matches_external_id ON external_matches(external_id);
 ```
 
-## 8. artist_identity 歌手身份表
+## 9. artist_identity 歌手身份表
 
 ```sql
 CREATE TABLE artist_identity (
@@ -166,7 +192,7 @@ unknown
 CREATE UNIQUE INDEX uniq_artist_identity_artist_id ON artist_identity(artist_id);
 ```
 
-## 9. song_screening 歌曲初筛表
+## 10. song_screening 歌曲初筛表
 
 ```sql
 CREATE TABLE song_screening (
@@ -199,7 +225,7 @@ CREATE INDEX idx_song_screening_status ON song_screening(status);
 CREATE INDEX idx_song_screening_score ON song_screening(score);
 ```
 
-## 10. review_records 审核记录表
+## 11. review_records 审核记录表
 
 ```sql
 CREATE TABLE review_records (
@@ -214,7 +240,7 @@ CREATE TABLE review_records (
 );
 ```
 
-## 11. sync_jobs 同步任务表
+## 12. sync_jobs 同步任务表
 
 ```sql
 CREATE TABLE sync_jobs (
@@ -243,7 +269,7 @@ failed
 partial_success
 ```
 
-## 12. lyrics_cache 可选歌词缓存表
+## 13. lyrics_cache 可选歌词缓存表
 
 第一阶段歌词只用于后端筛选兜底，不做公开展示。
 
@@ -268,18 +294,19 @@ CREATE TABLE lyrics_cache (
 - 可以只保存语言检测统计，不保存完整歌词。
 - 如果保存歌词，只用于后台筛选和排查。
 
-## 13. 最小索引建议
+## 14. 最小索引建议
 
 ```sql
 CREATE INDEX idx_songs_netease_song_id ON songs(netease_song_id);
 CREATE INDEX idx_artists_netease_artist_id ON artists(netease_artist_id);
 CREATE INDEX idx_albums_netease_album_id ON albums(netease_album_id);
 CREATE INDEX idx_playlists_netease_playlist_id ON playlists(netease_playlist_id);
+CREATE INDEX idx_song_tags_tag_name ON song_tags(tag_name);
 CREATE INDEX idx_song_screening_status_score ON song_screening(status, score DESC);
 CREATE INDEX idx_artist_identity_status ON artist_identity(status);
 ```
 
-## 14. 手工审核优先原则
+## 15. 手工审核优先原则
 
 在代码层必须实现：
 
