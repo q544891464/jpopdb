@@ -150,6 +150,35 @@ describe('NeteaseClient', () => {
     ])
   })
 
+  it('fetches catalog stats from Netease detail, red count and comments', async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            code: 200,
+            songs: [{ id: 99, name: 'Song', pop: 88, publishTime: 1_704_153_600_000 }],
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ code: 200, data: { count: 12345 } }), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ code: 200, total: 678 }), { status: 200 }),
+      )
+    const client = new NeteaseClient('http://netease.example', fetcher)
+
+    const result = await client.getCatalogStats('99', '20')
+
+    expect(result.popularity).toBe(88)
+    expect(result.redCount).toBe(12345)
+    expect(result.commentCount).toBe(678)
+    expect(result.publishTime?.toISOString()).toBe('2024-01-02T00:00:00.000Z')
+    expect(fetcher).toHaveBeenCalledTimes(3)
+  })
+
   it('paginates artist songs up to the configured safety limit', async () => {
     const makeSong = (id: number) => ({
       id,

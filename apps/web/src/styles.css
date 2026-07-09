@@ -346,6 +346,22 @@ h3 {
   gap: 10px;
 }
 
+.metadata-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid rgb(255 255 255 / 58%);
+}
+
+.metadata-actions span {
+  color: #7b7280;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
 .console-hint {
   margin: 12px 0 0;
   color: #7b7280;
@@ -1151,6 +1167,78 @@ h3 {
   font-weight: 700;
 }
 
+.job-actions-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.job-items-panel {
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid #eee8ef;
+  border-radius: 16px;
+  background: #fbf9fc;
+}
+
+.job-item-list {
+  display: grid;
+  gap: 10px;
+  max-height: 360px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.job-item-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 0.6fr);
+  gap: 12px;
+  align-items: start;
+  padding: 12px;
+  border: 1px solid #ece6ef;
+  border-radius: 14px;
+  background: #fff;
+}
+
+.job-item-main {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.job-item-main strong,
+.job-item-main span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.job-item-main span {
+  color: #6f6672;
+  font-size: 0.84rem;
+}
+
+.job-item-main small {
+  color: #928894;
+  font-size: 0.74rem;
+  font-weight: 800;
+}
+
+.job-item-side {
+  display: grid;
+  gap: 6px;
+  justify-items: end;
+  text-align: right;
+}
+
+.job-item-side p {
+  margin: 0;
+  color: #746c78;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
 .artist-card {
   grid-template-columns: minmax(0, 1fr) 260px;
 }
@@ -1637,8 +1725,14 @@ h3 {
 
   .candidate-card,
   .artist-card,
-  .job-card {
+  .job-card,
+  .job-item-card {
     grid-template-columns: 1fr;
+  }
+
+  .job-item-side {
+    justify-items: start;
+    text-align: left;
   }
 
   .candidate-actions,

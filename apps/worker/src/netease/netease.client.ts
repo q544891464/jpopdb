@@ -1,6 +1,7 @@
 import type {
   ExternalErrorCategory,
   NeteaseArtistSongsResult,
+  NeteaseCatalogStatsResult,
   NeteaseLyricResult,
   NeteasePlaylist,
   NeteasePlaylistResult,
@@ -88,6 +89,32 @@ export class NeteaseClient {
     return {
       tags: this.readWikiTags(raw),
       raw,
+    }
+  }
+
+  async getCatalogStats(
+    neteaseSongId: string,
+    neteaseAlbumId: string | null,
+  ): Promise<NeteaseCatalogStatsResult> {
+    const [detail, red, comments] = await Promise.all([
+      this.request('/song/detail', { ids: neteaseSongId }),
+      this.request('/song/red/count', { id: neteaseSongId }),
+      this.request('/comment/music', { id: neteaseSongId, limit: '1', offset: '0' }),
+    ])
+
+    let album: unknown | undefined
+    let publishTime = this.readSongDate(detail)
+    if (!publishTime && neteaseAlbumId) {
+      album = await this.request('/album', { id: neteaseAlbumId })
+      publishTime = this.readNestedDate(album, 'album', 'publishTime')
+    }
+
+    return {
+      publishTime,
+      popularity: this.readSongNumber(detail, 'pop'),
+      redCount: this.readNestedNumber(red, 'data', 'count'),
+      commentCount: this.readNumber(comments, 'total'),
+      raw: { detail, red, comments, ...(album === undefined ? {} : { album }) },
     }
   }
 
@@ -311,6 +338,26 @@ export class NeteaseClient {
 
   private readTitle(value: Record<string, unknown> | null): string | null {
     return this.readString(this.readObjectValue(value, 'mainTitle'), 'title')
+  }
+
+  private readSongNumber(value: unknown, key: string): number | null {
+    if (typeof value !== 'object' || value === null || !('songs' in value)) return null
+    const songs = (value as Record<string, unknown>).songs
+    return Array.isArray(songs) ? this.readNumber(songs[0], key) : null
+  }
+
+  private readSongDate(value: unknown): Date | null {
+    const timestamp = this.readSongNumber(value, 'publishTime')
+    return timestamp && timestamp > 0 ? new Date(timestamp) : null
+  }
+
+  private readNestedNumber(value: unknown, section: string, key: string): number | null {
+    return this.readNumber(this.readObjectValue(value, section), key)
+  }
+
+  private readNestedDate(value: unknown, section: string, key: string): Date | null {
+    const timestamp = this.readNestedNumber(value, section, key)
+    return timestamp && timestamp > 0 ? new Date(timestamp) : null
   }
 
   private positiveId(value: unknown, key: string): string | null {

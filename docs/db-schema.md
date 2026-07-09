@@ -269,7 +269,45 @@ failed
 partial_success
 ```
 
-## 13. lyrics_cache 可选歌词缓存表
+## 13. sync_job_items 同步任务明细表
+
+用于记录每个后台任务实际处理过哪些歌曲，便于排查导入、补全统计和失败原因。
+
+```sql
+CREATE TABLE sync_job_items (
+  id BIGSERIAL PRIMARY KEY,
+  sync_job_id BIGINT NOT NULL REFERENCES sync_jobs(id) ON DELETE CASCADE,
+  target_type VARCHAR(50) NOT NULL DEFAULT 'song',
+  target_id BIGINT,
+  netease_song_id BIGINT,
+  name VARCHAR(255) NOT NULL,
+  artist_names JSONB NOT NULL DEFAULT '[]'::jsonb,
+  status VARCHAR(30) NOT NULL,
+  message TEXT,
+  raw_json JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
+
+状态：
+
+```text
+success
+failed
+skipped
+```
+
+字段说明：
+
+```text
+sync_job_id：所属后台任务
+target_type / target_id：本地实体，当前主要为 song
+netease_song_id：网易云歌曲 ID，失败项也尽量记录
+name / artist_names：展示给后台管理员看的歌曲信息
+raw_json：任务内部排查用的可选响应片段，不在公开 catalog 暴露
+```
+
+## 14. lyrics_cache 可选歌词缓存表
 
 第一阶段歌词只用于后端筛选兜底，不做公开展示。
 
@@ -294,7 +332,7 @@ CREATE TABLE lyrics_cache (
 - 可以只保存语言检测统计，不保存完整歌词。
 - 如果保存歌词，只用于后台筛选和排查。
 
-## 14. 最小索引建议
+## 15. 最小索引建议
 
 ```sql
 CREATE INDEX idx_songs_netease_song_id ON songs(netease_song_id);
@@ -302,11 +340,12 @@ CREATE INDEX idx_artists_netease_artist_id ON artists(netease_artist_id);
 CREATE INDEX idx_albums_netease_album_id ON albums(netease_album_id);
 CREATE INDEX idx_playlists_netease_playlist_id ON playlists(netease_playlist_id);
 CREATE INDEX idx_song_tags_tag_name ON song_tags(tag_name);
+CREATE INDEX idx_sync_job_items_job_created ON sync_job_items(sync_job_id, created_at, id);
 CREATE INDEX idx_song_screening_status_score ON song_screening(status, score DESC);
 CREATE INDEX idx_artist_identity_status ON artist_identity(status);
 ```
 
-## 15. 手工审核优先原则
+## 16. 手工审核优先原则
 
 在代码层必须实现：
 

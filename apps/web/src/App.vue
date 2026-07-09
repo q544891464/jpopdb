@@ -32,6 +32,19 @@ type SyncJob = {
   createdAt: string
 }
 
+type SyncJobItem = {
+  id: string
+  syncJobId: string
+  targetType: string
+  targetId: string | null
+  neteaseSongId: string | null
+  name: string
+  artistNames: string[]
+  status: 'success' | 'failed' | 'skipped'
+  message: string | null
+  createdAt: string
+}
+
 type EvidenceItem = {
   source?: string
   type?: string
@@ -343,6 +356,10 @@ const manualArtistSearchLoading = ref(false)
 const manualArtistImportingId = ref<string | null>(null)
 const jobs = ref<SyncJob[]>([])
 const jobsLoading = ref(true)
+const expandedJobId = ref<string | null>(null)
+const jobItemsByJobId = ref<Record<string, SyncJobItem[]>>({})
+const jobItemsErrors = ref<Record<string, string>>({})
+const jobItemsLoadingId = ref<string | null>(null)
 const stats = ref<ScreeningStats | null>(null)
 const statsLoading = ref(true)
 const statsError = ref('')
@@ -358,6 +375,7 @@ const reviewingSongId = ref<string | null>(null)
 const reviewingArtistId = ref<string | null>(null)
 const importingArtistId = ref<string | null>(null)
 const continuingImportJobId = ref<string | null>(null)
+const catalogStatsSyncLoading = ref(false)
 const bulkArtistImportLoading = ref(false)
 const bulkTruncatedImportLoading = ref(false)
 const rescreeningSongId = ref<string | null>(null)
@@ -501,6 +519,24 @@ async function loadJobs(options: { silent?: boolean } = {}): Promise<void> {
     jobs.value = (await response.json()) as SyncJob[]
   } finally {
     jobsLoading.value = false
+  }
+}
+
+async function loadJobItems(job: SyncJob): Promise<void> {
+  jobItemsLoadingId.value = job.id
+  jobItemsErrors.value = { ...jobItemsErrors.value, [job.id]: '' }
+  try {
+    const response = await adminFetch(`/api/admin/jobs/${job.id}/items?limit=200`)
+    if (!response.ok) throw new Error(await readError(response))
+    const payload = (await response.json()) as { items: SyncJobItem[] }
+    jobItemsByJobId.value = { ...jobItemsByJobId.value, [job.id]: payload.items }
+  } catch (error) {
+    jobItemsErrors.value = {
+      ...jobItemsErrors.value,
+      [job.id]: error instanceof Error ? error.message : '任务明细加载失败',
+    }
+  } finally {
+    jobItemsLoadingId.value = null
   }
 }
 
@@ -842,6 +878,27 @@ async function startScreening(limit = screeningLimit.value): Promise<void> {
   }
 }
 
+async function startCatalogStatsSync(): Promise<void> {
+  catalogStatsSyncLoading.value = true
+  screeningMessage.value = ''
+  screeningError.value = ''
+  try {
+    const response = await adminFetch('/api/admin/catalog/stats-sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ limit: 100, missingOnly: true }),
+    })
+    if (!response.ok) throw new Error(await readError(response))
+    const job = (await response.json()) as SyncJob
+    screeningMessage.value = `网易云统计同步任务 #${job.id} 已创建，本次补齐最多 100 首缺失红心/评论的歌曲。`
+    await loadJobs({ silent: true })
+  } catch (error) {
+    screeningError.value = error instanceof Error ? error.message : '创建网易云统计同步任务失败'
+  } finally {
+    catalogStatsSyncLoading.value = false
+  }
+}
+
 async function reviewSong(song: CandidateSong, status: ScreeningStatus): Promise<void> {
   const restoreScroll = createScrollRestorer()
   reviewingSongId.value = song.songId
@@ -1117,6 +1174,25 @@ function closeCandidate(): void {
   selectedCandidate.value = null
 }
 
+async function toggleJobItems(job: SyncJob): Promise<void> {
+  if (expandedJobId.value === job.id) {
+    expandedJobId.value = null
+    return
+  }
+  expandedJobId.value = job.id
+  if (!jobItemsByJobId.value[job.id]) {
+    await loadJobItems(job)
+  }
+}
+
+function jobItemsFor(job: SyncJob): SyncJobItem[] {
+  return jobItemsByJobId.value[job.id] ?? []
+}
+
+function jobItemsError(job: SyncJob): string {
+  return jobItemsErrors.value[job.id] ?? ''
+}
+
 function jobProgress(job: SyncJob): number {
   if (job.totalCount === 0) return job.status === 'success' ? 100 : 0
   return Math.round(((job.successCount + job.failedCount) / job.totalCount) * 100)
@@ -1326,7 +1402,23 @@ function jobTypeText(jobType: string): string {
   if (jobType === 'artist_song_import') return '艺人歌曲导入'
   if (jobType === 'playlist_import') return '歌单导入'
   if (jobType === 'song_screening') return '歌曲初筛'
+  if (jobType === 'catalog_stats_sync') return '网易云统计同步'
   return jobType
+}
+
+function jobItemStatusText(status: SyncJobItem['status']): string {
+  return {
+    success: '成功',
+    failed: '失败',
+    skipped: '跳过',
+  }[status]
+}
+
+function jobItemTagType(status: SyncJobItem['status']): 'success' | 'warning' | 'danger' | 'info' {
+  if (status === 'success') return 'success'
+  if (status === 'failed') return 'danger'
+  if (status === 'skipped') return 'warning'
+  return 'info'
 }
 
 function artistTagType(status: ArtistIdentityStatus): 'success' | 'warning' | 'danger' | 'info' {
@@ -2052,6 +2144,17 @@ onUnmounted(() => {
         <p class="console-hint">
           建议日常用 50 首推进 backlog；外部 API 超时时可退回 5 或 20 首重试。
         </p>
+        <div class="metadata-actions">
+          <el-button
+            type="primary"
+            plain
+            :loading="catalogStatsSyncLoading"
+            @click="startCatalogStatsSync"
+          >
+            同步缺失红心/评论 100 首
+          </el-button>
+          <span>导入时先保存基础元数据；红心数、评论数可在后台分批补齐。</span>
+        </div>
         <p v-if="screeningMessage" class="feedback success-feedback">{{ screeningMessage }}</p>
         <p v-if="screeningError" class="feedback error-feedback">{{ screeningError }}</p>
       </article>
@@ -2338,17 +2441,49 @@ onUnmounted(() => {
             >
               {{ artistImportContinuationText(job) }}
             </p>
-            <el-button
-              v-if="canContinueArtistJob(job)"
-              size="small"
-              type="primary"
-              plain
-              :loading="continuingImportJobId === job.id"
-              @click="continueArtistImport(job)"
-            >
-              继续导入后续 500 首
-            </el-button>
+            <div class="job-actions-row">
+              <el-button
+                size="small"
+                plain
+                :loading="jobItemsLoadingId === job.id"
+                @click="toggleJobItems(job)"
+              >
+                {{ expandedJobId === job.id ? '收起处理歌曲' : '查看处理歌曲' }}
+              </el-button>
+              <el-button
+                v-if="canContinueArtistJob(job)"
+                size="small"
+                type="primary"
+                plain
+                :loading="continuingImportJobId === job.id"
+                @click="continueArtistImport(job)"
+              >
+                继续导入后续 500 首
+              </el-button>
+            </div>
             <p v-if="job.errorMessage" class="job-error">{{ job.errorMessage }}</p>
+            <div v-if="expandedJobId === job.id" class="job-items-panel">
+              <p v-if="jobItemsLoadingId === job.id" class="muted">正在读取任务明细...</p>
+              <p v-else-if="jobItemsError(job)" class="job-error">{{ jobItemsError(job) }}</p>
+              <p v-else-if="jobItemsFor(job).length === 0" class="muted">
+                这个任务还没有歌曲级明细；新创建的导入和统计同步任务会逐步写入。
+              </p>
+              <div v-else class="job-item-list">
+                <article v-for="item in jobItemsFor(job)" :key="item.id" class="job-item-card">
+                  <div class="job-item-main">
+                    <strong>{{ item.name }}</strong>
+                    <span>{{ item.artistNames.join(' / ') || '未知歌手' }}</span>
+                    <small>网易云 ID {{ item.neteaseSongId || '未知' }} · {{ formatDate(item.createdAt) }}</small>
+                  </div>
+                  <div class="job-item-side">
+                    <el-tag size="small" :type="jobItemTagType(item.status)">
+                      {{ jobItemStatusText(item.status) }}
+                    </el-tag>
+                    <p v-if="item.message">{{ item.message }}</p>
+                  </div>
+                </article>
+              </div>
+            </div>
           </div>
         </article>
       </div>

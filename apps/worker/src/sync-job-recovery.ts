@@ -2,6 +2,10 @@ import type { Queue } from 'bullmq'
 import type { Pool } from 'pg'
 
 import {
+  CATALOG_STATS_SYNC_JOB,
+  type CatalogStatsSyncJobData,
+} from './catalog/catalog-stats-sync.processor'
+import {
   ARTIST_SONG_IMPORT_JOB,
   type ArtistSongImportJobData,
 } from './import/artist-song-import.processor'
@@ -9,7 +13,11 @@ import { PLAYLIST_IMPORT_JOB, type PlaylistImportJobData } from './import/playli
 import { SONG_SCREENING_JOB } from './screening/song-screening.processor'
 import type { SongScreeningJobData } from './screening/screening.types'
 
-type QueueJobData = PlaylistImportJobData | ArtistSongImportJobData | SongScreeningJobData
+type QueueJobData =
+  | PlaylistImportJobData
+  | ArtistSongImportJobData
+  | SongScreeningJobData
+  | CatalogStatsSyncJobData
 
 type StuckSyncJobRow = {
   id: string
@@ -85,6 +93,17 @@ async function toQueueJob(
     }
   }
 
+  if (row.job_type === 'catalog_stats_sync') {
+    return {
+      name: CATALOG_STATS_SYNC_JOB,
+      data: {
+        syncJobId: row.id,
+        limit: readMetadataInteger(row.metadata, 'limit', 100),
+        missingOnly: readMetadataBoolean(row.metadata, 'missingOnly', true),
+      },
+    }
+  }
+
   return null
 }
 
@@ -92,6 +111,12 @@ function readMetadataInteger(metadata: unknown, field: string, fallback: number)
   if (typeof metadata !== 'object' || metadata === null || !(field in metadata)) return fallback
   const value = (metadata as Record<string, unknown>)[field]
   return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : fallback
+}
+
+function readMetadataBoolean(metadata: unknown, field: string, fallback: boolean): boolean {
+  if (typeof metadata !== 'object' || metadata === null || !(field in metadata)) return fallback
+  const value = (metadata as Record<string, unknown>)[field]
+  return typeof value === 'boolean' ? value : fallback
 }
 
 async function findArtistForImport(database: Pool, sourceId: string | null): Promise<ArtistRow | null> {

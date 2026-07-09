@@ -4,6 +4,12 @@ import Redis from 'ioredis'
 import { Pool } from 'pg'
 
 import { loadWorkerConfig } from './config'
+import {
+  CatalogStatsSyncProcessor,
+  CATALOG_STATS_SYNC_JOB,
+  type CatalogStatsSyncJobData,
+} from './catalog/catalog-stats-sync.processor'
+import { CatalogStatsSyncRepository } from './catalog/catalog-stats-sync.repository'
 import { PlaylistImportProcessor, PLAYLIST_IMPORT_JOB } from './import/playlist-import.processor'
 import type { PlaylistImportJobData } from './import/playlist-import.processor'
 import {
@@ -46,7 +52,7 @@ async function bootstrap(): Promise<void> {
     maxRetriesPerRequest: null,
   }
   const recoveryQueue = new Queue<
-    PlaylistImportJobData | ArtistSongImportJobData | SongScreeningJobData
+    PlaylistImportJobData | ArtistSongImportJobData | SongScreeningJobData | CatalogStatsSyncJobData
   >('jpopdb-jobs', {
     connection: queueConnectionOptions,
     defaultJobOptions: {
@@ -71,6 +77,10 @@ async function bootstrap(): Promise<void> {
     neteaseClient,
     new PlaylistImportRepository(database),
   )
+  const catalogStatsSync = new CatalogStatsSyncProcessor(
+    neteaseClient,
+    new CatalogStatsSyncRepository(database),
+  )
   const songScreening = new SongScreeningProcessor(
     new ScreeningRepository(database),
     new MusicBrainzClient(config.musicBrainzAppName, config.musicBrainzContactEmail),
@@ -80,7 +90,7 @@ async function bootstrap(): Promise<void> {
   )
 
   const worker = new Worker<
-    PlaylistImportJobData | ArtistSongImportJobData | SongScreeningJobData
+    PlaylistImportJobData | ArtistSongImportJobData | SongScreeningJobData | CatalogStatsSyncJobData
   >(
     'jpopdb-jobs',
     async (job) => {
@@ -94,6 +104,10 @@ async function bootstrap(): Promise<void> {
       }
       if (job.name === SONG_SCREENING_JOB) {
         await songScreening.process(job as Job<SongScreeningJobData>)
+        return
+      }
+      if (job.name === CATALOG_STATS_SYNC_JOB) {
+        await catalogStatsSync.process(job as Job<CatalogStatsSyncJobData>)
         return
       }
       throw new Error(`Unknown job type: ${job.name}`)

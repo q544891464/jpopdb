@@ -1,7 +1,7 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common'
 
 import { DatabaseService } from '../../infrastructure/database.service'
-import type { SyncJobResponse, SyncJobStatus } from './sync-job.types'
+import type { SyncJobItemResponse, SyncJobResponse, SyncJobStatus } from './sync-job.types'
 
 type SyncJobRow = {
   id: string
@@ -17,6 +17,19 @@ type SyncJobRow = {
   finished_at: Date | null
   created_at: Date
   updated_at: Date
+}
+
+type SyncJobItemRow = {
+  id: string
+  sync_job_id: string
+  target_type: string
+  target_id: string | null
+  netease_song_id: string | null
+  name: string
+  artist_names: unknown
+  status: 'success' | 'failed' | 'skipped'
+  message: string | null
+  created_at: Date
 }
 
 @Injectable()
@@ -69,6 +82,20 @@ export class SyncJobService {
     return this.mapRow(row)
   }
 
+  async createCatalogStatsSync(metadata: Record<string, unknown>): Promise<SyncJobResponse> {
+    const result = await this.database.query<SyncJobRow>(
+      `INSERT INTO sync_jobs (job_type, source_id, metadata)
+       VALUES ('catalog_stats_sync', 'catalog_stats', $1::jsonb)
+       RETURNING *`,
+      [JSON.stringify(metadata)],
+    )
+    const row = result.rows[0]
+    if (!row) {
+      throw new Error('Failed to create catalog stats sync job')
+    }
+    return this.mapRow(row)
+  }
+
   async markQueueFailure(id: string, message: string): Promise<void> {
     await this.database.query(
       `UPDATE sync_jobs
@@ -107,6 +134,29 @@ export class SyncJobService {
     return this.mapRow(row)
   }
 
+  async findItems(syncJobId: string, limit = 100): Promise<SyncJobItemResponse[]> {
+    await this.findById(syncJobId)
+    const result = await this.database.query<SyncJobItemRow>(
+      `SELECT
+         id::text,
+         sync_job_id::text,
+         target_type,
+         target_id::text,
+         netease_song_id::text,
+         name,
+         artist_names,
+         status,
+         message,
+         created_at
+       FROM sync_job_items
+       WHERE sync_job_id = $1
+       ORDER BY created_at ASC, id ASC
+       LIMIT $2`,
+      [syncJobId, limit],
+    )
+    return result.rows.map((row) => this.mapItemRow(row))
+  }
+
   private mapRow(row: SyncJobRow): SyncJobResponse {
     return {
       id: row.id,
@@ -125,5 +175,26 @@ export class SyncJobService {
       createdAt: row.created_at.toISOString(),
       updatedAt: row.updated_at.toISOString(),
     }
+  }
+
+  private mapItemRow(row: SyncJobItemRow): SyncJobItemResponse {
+    return {
+      id: row.id,
+      syncJobId: row.sync_job_id,
+      targetType: row.target_type,
+      targetId: row.target_id,
+      neteaseSongId: row.netease_song_id,
+      name: row.name,
+      artistNames: this.readStringArray(row.artist_names),
+      status: row.status,
+      message: row.message,
+      createdAt: row.created_at.toISOString(),
+    }
+  }
+
+  private readStringArray(value: unknown): string[] {
+    return Array.isArray(value)
+      ? value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+      : []
   }
 }

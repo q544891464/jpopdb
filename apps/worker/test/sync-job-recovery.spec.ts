@@ -16,6 +16,12 @@ describe('recoverStuckSyncJobs', () => {
             { id: '3', job_type: 'song_screening', source_id: 'pending:50', metadata: {} },
             { id: '4', job_type: 'song_screening', source_id: 'song:100', metadata: {} },
             { id: '5', job_type: 'song_screening', source_id: 'artist:10', metadata: {} },
+            {
+              id: '6',
+              job_type: 'catalog_stats_sync',
+              source_id: 'catalog_stats',
+              metadata: { limit: 100, missingOnly: true },
+            },
           ],
         })
         .mockResolvedValueOnce({
@@ -26,7 +32,7 @@ describe('recoverStuckSyncJobs', () => {
 
     const recovered = await recoverStuckSyncJobs(database, queue)
 
-    expect(recovered).toBe(5)
+    expect(recovered).toBe(6)
     expect(queue.add).toHaveBeenNthCalledWith(
       1,
       'playlist-import',
@@ -63,6 +69,12 @@ describe('recoverStuckSyncJobs', () => {
       'screen-songs',
       { syncJobId: '5', artistId: '10', limit: 200 },
       { jobId: 'screen-songs-5' },
+    )
+    expect(queue.add).toHaveBeenNthCalledWith(
+      6,
+      'catalog-stats-sync',
+      { syncJobId: '6', limit: 100, missingOnly: true },
+      { jobId: 'catalog-stats-sync-6' },
     )
   })
 

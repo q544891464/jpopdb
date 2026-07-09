@@ -40,9 +40,18 @@ export class PlaylistImportProcessor {
         const song = songsById.get(songId)
         if (!song) {
           failedCount += 1
-          errors.push(`歌曲 ${songId} 无法获取详情`)
+          const message = `歌曲 ${songId} 无法获取详情`
+          errors.push(message)
+          await this.repository.recordSongJobItem(syncJobId, {
+            songId: null,
+            neteaseSongId: songId,
+            songName: `网易云歌曲 ${songId}`,
+            artistNames: [],
+            status: 'failed',
+            message,
+          })
         } else {
-          const succeeded = await this.persistOne(localPlaylistId, song, position, errors)
+          const succeeded = await this.persistOne(localPlaylistId, song, position, errors, syncJobId)
           if (succeeded) {
             successCount += 1
           } else {
@@ -93,13 +102,32 @@ export class PlaylistImportProcessor {
     song: NeteaseSong,
     position: number,
     errors: string[],
+    syncJobId: string,
   ): Promise<boolean> {
     try {
       const wikiTags = await this.fetchWikiTags(song)
-      await this.repository.persistSong(playlistId, song, position, wikiTags)
+      const songId = await this.repository.persistSong(playlistId, song, position, wikiTags)
+      await this.repository.recordSongJobItem(syncJobId, {
+        songId,
+        neteaseSongId: String(song.id),
+        songName: song.name,
+        artistNames: song.ar.map((artist) => artist.name),
+        status: 'success',
+        message: wikiTags ? `已导入，保存 ${wikiTags.length} 个网易云百科标签` : '已导入',
+        raw: song,
+      })
       return true
     } catch (error) {
-      errors.push(`歌曲 ${song.id} 保存失败: ${this.describeError(error)}`)
+      const message = `歌曲 ${song.id} 保存失败: ${this.describeError(error)}`
+      errors.push(message)
+      await this.repository.recordSongJobItem(syncJobId, {
+        songId: null,
+        neteaseSongId: String(song.id),
+        songName: song.name,
+        artistNames: song.ar.map((artist) => artist.name),
+        status: 'failed',
+        message,
+      })
       return false
     }
   }

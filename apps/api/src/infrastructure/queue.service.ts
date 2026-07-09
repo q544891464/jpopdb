@@ -6,6 +6,7 @@ export const JOB_QUEUE_NAME = 'jpopdb-jobs'
 export const PLAYLIST_IMPORT_JOB = 'playlist-import'
 export const ARTIST_SONG_IMPORT_JOB = 'artist-song-import'
 export const SONG_SCREENING_JOB = 'screen-songs'
+export const CATALOG_STATS_SYNC_JOB = 'catalog-stats-sync'
 
 export type PlaylistImportJobData = {
   syncJobId: string
@@ -29,6 +30,12 @@ export type ArtistSongImportJobData = {
   offset?: number
 }
 
+export type CatalogStatsSyncJobData = {
+  syncJobId: string
+  limit: number
+  missingOnly: boolean
+}
+
 function getConnectionOptions(redisUrlValue: string): {
   host: string
   port: number
@@ -49,7 +56,7 @@ function getConnectionOptions(redisUrlValue: string): {
 @Injectable()
 export class QueueService implements OnModuleDestroy {
   private readonly queue = new Queue<
-    PlaylistImportJobData | ArtistSongImportJobData | SongScreeningJobData
+    PlaylistImportJobData | ArtistSongImportJobData | SongScreeningJobData | CatalogStatsSyncJobData
   >(JOB_QUEUE_NAME, {
     connection: getConnectionOptions(process.env.REDIS_URL ?? 'redis://localhost:6379'),
     defaultJobOptions: {
@@ -75,6 +82,12 @@ export class QueueService implements OnModuleDestroy {
   async enqueueArtistSongImport(data: ArtistSongImportJobData): Promise<void> {
     await this.queue.add(ARTIST_SONG_IMPORT_JOB, data, {
       jobId: `${ARTIST_SONG_IMPORT_JOB}-${data.syncJobId}`,
+    })
+  }
+
+  async enqueueCatalogStatsSync(data: CatalogStatsSyncJobData): Promise<void> {
+    await this.queue.add(CATALOG_STATS_SYNC_JOB, data, {
+      jobId: `${CATALOG_STATS_SYNC_JOB}-${data.syncJobId}`,
     })
   }
 

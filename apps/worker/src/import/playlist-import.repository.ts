@@ -105,16 +105,46 @@ export class PlaylistImportRepository {
     song: NeteaseSong,
     position: number,
     wikiTags?: NeteaseWikiTag[],
-  ): Promise<void> {
-    await this.persistSongRecord(song, { playlistId, position, wikiTags })
+  ): Promise<string> {
+    return this.persistSongRecord(song, { playlistId, position, wikiTags })
   }
 
   async persistArtistSong(
     song: NeteaseSong,
     confirmedArtistName: string,
     wikiTags?: NeteaseWikiTag[],
+  ): Promise<string> {
+    return this.persistSongRecord(song, { confirmedArtistName, wikiTags })
+  }
+
+  async recordSongJobItem(
+    syncJobId: string,
+    item: {
+      songId: string | null
+      neteaseSongId: string | null
+      songName: string
+      artistNames: string[]
+      status: 'success' | 'failed' | 'skipped'
+      message: string | null
+      raw?: unknown
+    },
   ): Promise<void> {
-    await this.persistSongRecord(song, { confirmedArtistName, wikiTags })
+    await this.pool.query(
+      `INSERT INTO sync_job_items (
+         sync_job_id, target_type, target_id, netease_song_id, name,
+         artist_names, status, message, raw_json
+       ) VALUES ($1, 'song', $2, $3, $4, $5::jsonb, $6, $7, $8::jsonb)`,
+      [
+        syncJobId,
+        item.songId,
+        item.neteaseSongId,
+        item.songName.slice(0, 255),
+        JSON.stringify(item.artistNames),
+        item.status,
+        item.message,
+        JSON.stringify(item.raw ?? null),
+      ],
+    )
   }
 
   private async persistSongRecord(
@@ -125,12 +155,13 @@ export class PlaylistImportRepository {
       confirmedArtistName?: string
       wikiTags?: NeteaseWikiTag[]
     },
-  ): Promise<void> {
+  ): Promise<string> {
     const client = await this.pool.connect()
+    let songId: string
     try {
       await client.query('BEGIN')
       const albumId = await this.upsertAlbum(client, song)
-      const songId = await this.upsertSong(client, song, albumId)
+      songId = await this.upsertSong(client, song, albumId)
 
       await client.query('DELETE FROM song_artists WHERE song_id = $1', [songId])
       for (const artist of song.ar) {
@@ -197,6 +228,7 @@ export class PlaylistImportRepository {
         await this.replaceSongTags(client, songId, source.wikiTags)
       }
       await client.query('COMMIT')
+      return songId
     } catch (error) {
       await client.query('ROLLBACK')
       throw error

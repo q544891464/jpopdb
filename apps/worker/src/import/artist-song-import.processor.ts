@@ -33,7 +33,7 @@ export class ArtistSongImportProcessor {
       let failedCount = 0
       const errors: string[] = []
       for (const [index, song] of result.songs.entries()) {
-        if (await this.persistOne(song, artistName, errors)) {
+        if (await this.persistOne(song, artistName, errors, syncJobId)) {
           successCount += 1
         } else {
           failedCount += 1
@@ -87,13 +87,34 @@ export class ArtistSongImportProcessor {
     song: NeteaseSong,
     artistName: string,
     errors: string[],
+    syncJobId: string,
   ): Promise<boolean> {
     try {
       const wikiTags = await this.fetchWikiTags(song)
-      await this.repository.persistArtistSong(song, artistName, wikiTags)
+      const songId = await this.repository.persistArtistSong(song, artistName, wikiTags)
+      await this.repository.recordSongJobItem(syncJobId, {
+        songId,
+        neteaseSongId: String(song.id),
+        songName: song.name,
+        artistNames: song.ar.map((artist) => artist.name),
+        status: 'success',
+        message: wikiTags
+          ? `已从确认艺人 ${artistName} 导入，保存 ${wikiTags.length} 个网易云百科标签`
+          : `已从确认艺人 ${artistName} 导入`,
+        raw: song,
+      })
       return true
     } catch (error) {
-      errors.push(`歌曲 ${song.id} 保存失败: ${this.describeError(error)}`)
+      const message = `歌曲 ${song.id} 保存失败: ${this.describeError(error)}`
+      errors.push(message)
+      await this.repository.recordSongJobItem(syncJobId, {
+        songId: null,
+        neteaseSongId: String(song.id),
+        songName: song.name,
+        artistNames: song.ar.map((artist) => artist.name),
+        status: 'failed',
+        message,
+      })
       return false
     }
   }

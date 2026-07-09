@@ -1,12 +1,13 @@
 import { Body, Controller, Get, Inject, Param, Post, Query, UseGuards } from '@nestjs/common'
 
 import { AdminAuthGuard } from '../admin/admin-auth.guard'
+import { CatalogStatsSyncService } from '../catalog/catalog-stats-sync.service'
 import {
   ArtistSongImportService,
   type ConfirmedArtistImportResponse,
 } from './artist-song-import.service'
 import { PlaylistImportService } from './playlist-import.service'
-import type { SyncJobResponse } from './sync-job.types'
+import type { SyncJobItemResponse, SyncJobResponse } from './sync-job.types'
 import { SyncJobService } from './sync-job.service'
 import {
   NeteaseManualImportService,
@@ -22,12 +23,18 @@ export class ImportController {
     @Inject(PlaylistImportService) private readonly playlistImports: PlaylistImportService,
     @Inject(ArtistSongImportService) private readonly artistSongImports: ArtistSongImportService,
     @Inject(NeteaseManualImportService) private readonly neteaseManualImports: NeteaseManualImportService,
+    @Inject(CatalogStatsSyncService) private readonly catalogStatsSync: CatalogStatsSyncService,
     @Inject(SyncJobService) private readonly syncJobs: SyncJobService,
   ) {}
 
   @Post('import/playlist')
   async importPlaylist(@Body() body: unknown): Promise<SyncJobResponse> {
     return this.playlistImports.create(body)
+  }
+
+  @Post('catalog/stats-sync')
+  async syncCatalogStats(@Body() body: unknown): Promise<SyncJobResponse> {
+    return this.catalogStatsSync.create(body)
   }
 
   @Post('import/artist/manual')
@@ -92,5 +99,18 @@ export class ImportController {
   @Get('jobs/:id')
   async getJob(@Param('id') id: string): Promise<SyncJobResponse> {
     return this.syncJobs.findById(id)
+  }
+
+  @Get('jobs/:id/items')
+  async getJobItems(
+    @Param('id') id: string,
+    @Query('limit') rawLimit?: string,
+  ): Promise<{ items: SyncJobItemResponse[] }> {
+    return { items: await this.syncJobs.findItems(id, this.readItemLimit(rawLimit)) }
+  }
+
+  private readItemLimit(value: string | undefined): number {
+    const parsed = Number(value)
+    return Number.isInteger(parsed) && parsed > 0 ? Math.min(parsed, 500) : 100
   }
 }

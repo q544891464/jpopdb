@@ -86,6 +86,19 @@ export type NeteaseSongWikiResult = {
   raw: unknown
 }
 
+export type NeteaseCatalogStatsResult = {
+  publishTime: Date | null
+  popularity: number | null
+  redCount: number | null
+  commentCount: number | null
+  raw: {
+    detail: unknown
+    red: unknown
+    comments: unknown
+    album?: unknown
+  }
+}
+
 export type NeteaseLyricResult = {
   rawLrc: string | null
   translatedLrc: string | null
